@@ -73,6 +73,7 @@ fn enable_sse2() {
 }
 
 #[cfg(not(test))]
+#[allow(unused)]
 /// Setup page tables to provide an identity mapping over the full 4GiB range
 fn setup_pagetables() {
     const ADDRESS_SPACE_GIB: u64 = 64;
@@ -97,14 +98,14 @@ const VIRTIO_PCI_BLOCK_DEVICE_ID: u16 = 0x1042;
 #[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
-    unsafe {
-        asm!("movq $$0x180000, %rsp");
-    }
+//    unsafe {
+//        asm!("movq $$0x180000, %rsp");
+//    }
 
     log!("Starting..\n");
 
     enable_sse2();
-    setup_pagetables();
+//    setup_pagetables();
 
     pci::print_bus();
 
@@ -121,6 +122,8 @@ pub extern "C" fn _start() -> ! {
         block::VirtioBlockDevice::new(&mut mmio_transport)
     };
 
+    log!("device.init...\n");
+
     match device.init() {
         Err(_) => {
             log!("Error configuring block device\n");
@@ -133,6 +136,8 @@ pub extern "C" fn _start() -> ! {
     }
 
     let mut f;
+
+    log!("find_efi_partition...\n");
 
     match part::find_efi_partition(&device) {
         Ok((start, end)) => {

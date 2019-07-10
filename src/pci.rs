@@ -66,6 +66,65 @@ fn pci_config_read_u16(bus: u8, device: u8, func: u8, offset: u8) -> u16 {
 }
 
 #[cfg(not(test))]
+fn pci_config_write_u32(bus: u8, device: u8, func: u8, offset: u8, value: u32) -> () {
+    assert_eq!(offset % 4, 0);
+    assert!(device < MAX_DEVICES);
+    assert!(func < MAX_FUNCTIONS);
+
+    let addr = u32::from(bus) << 16; // bus bits 23-16
+    let addr = addr | u32::from(device) << 11; // slot/device bits 15-11
+    let addr = addr | u32::from(func) << 8; // function bits 10-8
+    let addr = addr | u32::from(offset & 0xfc); // register 7-0
+    let addr = addr | 1u32 << 31; // enable bit 31
+
+    let mut config_address_port: Port<u32> = unsafe { Port::new(CONFIG_ADDRESS) };
+    config_address_port.write(addr);
+
+    let mut config_data_port: Port<u32> = unsafe { Port::new(CONFIG_DATA) };
+
+    config_data_port.write(value)
+}
+
+#[cfg(not(test))]
+fn pci_config_write_u16(bus: u8, device: u8, func: u8, offset: u8, value: u16) -> () {
+    assert_eq!(offset % 2, 0);
+    assert!(device < MAX_DEVICES);
+    assert!(func < MAX_FUNCTIONS);
+
+    let addr = u32::from(bus) << 16; // bus bits 23-16
+    let addr = addr | u32::from(device) << 11; // slot/device bits 15-11
+    let addr = addr | u32::from(func) << 8; // function bits 10-8
+    let addr = addr | u32::from(offset & 0xfe); // register 7-0
+    let addr = addr | 1u32 << 31; // enable bit 31
+
+    let mut config_address_port: Port<u32> = unsafe { Port::new(CONFIG_ADDRESS) };
+    config_address_port.write(addr);
+
+    let mut config_data_port: Port<u16> = unsafe { Port::new(CONFIG_DATA) };
+
+    config_data_port.write(value)
+}
+
+#[cfg(not(test))]
+fn pci_config_write_u8(bus: u8, device: u8, func: u8, offset: u8, value: u8) -> () {
+    assert!(device < MAX_DEVICES);
+    assert!(func < MAX_FUNCTIONS);
+
+    let addr = u32::from(bus) << 16; // bus bits 23-16
+    let addr = addr | u32::from(device) << 11; // slot/device bits 15-11
+    let addr = addr | u32::from(func) << 8; // function bits 10-8
+    let addr = addr | u32::from(offset); // register 7-0
+    let addr = addr | 1u32 << 31; // enable bit 31
+
+    let mut config_address_port: Port<u32> = unsafe { Port::new(CONFIG_ADDRESS) };
+    config_address_port.write(addr);
+
+    let mut config_data_port: Port<u8> = unsafe { Port::new(CONFIG_DATA) };
+
+    config_data_port.write(value)
+}
+
+#[cfg(not(test))]
 fn get_device_details(bus: u8, device: u8, func: u8) -> (u16, u16) {
     (
         pci_config_read_u16(bus, device, func, 0),
@@ -157,6 +216,21 @@ impl PciDevice {
         pci_config_read_u32(self.bus, self.device, self.func, offset)
     }
 
+    #[allow(unused)]
+    fn config_write_u8(&self, offset: u8, value: u8) -> () {
+        pci_config_write_u8(self.bus, self.device, self.func, offset, value)
+    }
+
+    #[allow(unused)]
+    fn config_write_u16(&self, offset: u8, value: u16) -> () {
+        pci_config_write_u16(self.bus, self.device, self.func, offset, value)
+    }
+
+    #[allow(unused)]
+    fn config_write_u32(&self, offset: u8, value: u32) -> () {
+        pci_config_write_u32(self.bus, self.device, self.func, offset, value)
+    }
+
     fn init(&mut self) {
         let (vendor_id, device_id) = get_device_details(self.bus, self.device, self.func);
 
@@ -222,6 +296,7 @@ enum VirtioPciCapabilityType {
     NotifyConfig = 2,
     #[allow(unused)]
     IsrConfig = 3,
+    #[allow(unused)]
     DeviceConfig = 4,
     #[allow(unused)]
     PciConfig = 5,
