@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(unused)]
+
 mod alloc;
 mod file;
 
@@ -30,7 +32,7 @@ use r_efi::protocols::simple_text_input::Protocol as SimpleTextInputProtocol;
 use r_efi::protocols::simple_text_output::Mode as SimpleTextOutputMode;
 use r_efi::protocols::simple_text_output::Protocol as SimpleTextOutputProtocol;
 //use r_efi::protocols::loaded_image::Protocol as LoadedImageProtocol;
-use r_efi::protocols::device_path::Protocol as DevicePathProtocol;
+//use r_efi::protocols::device_path::Protocol as DevicePathProtocol;
 
 use r_efi::{eficall, eficall_abi};
 
@@ -686,58 +688,7 @@ extern "win64" fn image_unload(_: Handle) -> Status {
 }
 
 #[cfg(not(test))]
-/// The 'zero page', a.k.a linux kernel bootparams.
-pub const ZERO_PAGE_START: usize = 0x7000;
-
-#[cfg(not(test))]
-const E820_RAM: u32 = 1;
-
-#[cfg(not(test))]
-#[repr(C, packed)]
-struct E820Entry {
-    addr: u64,
-    size: u64,
-    entry_type: u32,
-}
-
-#[cfg(not(test))]
-const PAGE_SIZE: u64 = 4096;
-
-#[cfg(not(test))]
-// Populate allocator from E820, fixed ranges for the firmware and the loaded binary.
-fn populate_allocator(image_address: u64, image_size: u64) {
-    let mut zero_page = crate::mem::MemoryRegion::new(ZERO_PAGE_START as u64, 4096);
-
-    let e820_count = zero_page.read_u8(0x1e8);
-    let e820_table = zero_page.as_mut_slice::<E820Entry>(0x2d0, u64::from(e820_count));
-
-    for entry in e820_table {
-        if entry.entry_type == E820_RAM {
-            ALLOCATOR.lock().add_initial_allocation(
-                MemoryType::ConventionalMemory,
-                entry.size / PAGE_SIZE,
-                entry.addr,
-                efi::MEMORY_WB,
-            );
-        }
-    }
-
-    // Add ourselves
-    ALLOCATOR.lock().allocate_pages(
-        AllocateType::AllocateAddress,
-        MemoryType::RuntimeServicesCode,
-        1024 * 1024 / PAGE_SIZE,
-        1024 * 1024,
-    );
-
-    // Add the loaded binary
-    ALLOCATOR.lock().allocate_pages(
-        AllocateType::AllocateAddress,
-        MemoryType::LoaderCode,
-        image_size / PAGE_SIZE,
-        image_address,
-    );
-}
+pub const PAGE_SIZE: u64 = 4096;
 
 #[cfg(not(test))]
 const STDIN_HANDLE: Handle = 0 as Handle;
@@ -771,12 +722,7 @@ pub struct LoadedImageProtocol {
 }
 
 #[cfg(not(test))]
-pub fn efi_exec(
-    address: u64,
-    loaded_address: u64,
-    loaded_size: u64,
-    fs: &crate::fat::Filesystem,
-) {
+pub fn enter_uefi(hob: *const c_void) -> ! {
     let mut stdin = SimpleTextInputProtocol {
         reset: stdin_reset,
         read_key_stroke: stdin_read_key_stroke,
@@ -910,58 +856,6 @@ pub fn efi_exec(
         configuration_table: &mut ct,
     };
 
-    let mut file_paths = [
-        file::FileDevicePathProtocol {
-            device_path: DevicePathProtocol {
-                r#type: r_efi::protocols::device_path::TYPE_MEDIA,
-                sub_type: 4, // Media Path type file
-                length: [132, 0],
-            },
-            filename: [0; 64],
-        },
-        file::FileDevicePathProtocol {
-            device_path: DevicePathProtocol {
-                r#type: r_efi::protocols::device_path::TYPE_MEDIA,
-                sub_type: 4, // Media Path type file
-                length: [132, 0],
-            },
-            filename: [0; 64],
-        },
-        file::FileDevicePathProtocol {
-            device_path: DevicePathProtocol {
-                r#type: r_efi::protocols::device_path::TYPE_END,
-                sub_type: 0xff, // End of full path
-                length: [4, 0],
-            },
-            filename: [0; 64],
-        },
-    ];
-
-    crate::common::ascii_to_ucs2("\\EFI\\BOOT", &mut file_paths[0].filename);
-    crate::common::ascii_to_ucs2("BOOTX64.EFI", &mut file_paths[1].filename);
-
-    let wrapped_fs = file::FileSystemWrapper::new(fs);
-
-    let image = LoadedImageProtocol {
-        revision: r_efi::protocols::loaded_image::REVISION,
-        parent_handle: 0 as Handle,
-        system_table: &mut st,
-        device_handle: &wrapped_fs.proto as *const _ as Handle,
-        file_path: &mut file_paths[0].device_path, // Pointer to first path entry
-        load_options_size: 0,
-        load_options: core::ptr::null_mut(),
-        image_base: loaded_address as *mut _,
-        image_size: loaded_size,
-        image_code_type: efi::MemoryType::LoaderCode,
-        image_data_type: efi::MemoryType::LoaderData,
-        unload: image_unload,
-        reserved: core::ptr::null_mut(),
-    };
-
-    populate_allocator(loaded_address, loaded_size);
-
-    let ptr = address as *const ();
-    let code: extern "win64" fn(Handle, *mut efi::SystemTable) -> Status =
-        unsafe { core::mem::transmute(ptr) };
-    (code)((&image as *const _) as Handle, &mut st);
+    log!("Core Init Done\n");
+    loop {}
 }

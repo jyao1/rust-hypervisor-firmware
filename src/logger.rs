@@ -33,6 +33,9 @@ struct Logger {
 
 impl Logger {
     pub fn write_byte(&mut self, byte: u8) {
+        if byte == '\n' as u8 {
+          self.port.write('\r' as u8)
+        }
         self.port.write(byte)
     }
 

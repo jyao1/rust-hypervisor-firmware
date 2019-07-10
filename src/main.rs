@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(unused)]
+
 #![feature(asm)]
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
@@ -25,11 +27,26 @@ mod common;
 
 use core::panic::PanicInfo;
 
+use core::ffi::c_void;
+use core::mem::transmute;
+
 use cpuio::Port;
+
+use r_efi::efi::{
+    AllocateType, MemoryType, MEMORY_WB
+};
+
+use crate::pi::hob::{
+  Header, MemoryAllocation, ResourceDescription,
+  RESOURCE_SYSTEM_MEMORY, HOB_TYPE_MEMORY_ALLOCATION, HOB_TYPE_RESOURCE_DESCRIPTOR, HOB_TYPE_END_OF_HOB_LIST
+  };
+
+use crate::efi::{PAGE_SIZE, ALLOCATOR};
 
 mod block;
 mod bzimage;
 mod efi;
+mod pi;
 mod fat;
 mod loader;
 mod mem;
@@ -49,6 +66,7 @@ fn panic(_info: &PanicInfo) -> ! {
 #[cfg(not(test))]
 /// Reset the VM via the keyboard controller
 fn i8042_reset() -> ! {
+    log!("i8042_reset...\n");
     loop {
         let mut good: u8 = 0x02;
         let mut i8042_command: Port<u8> = unsafe { Port::new(0x64) };
@@ -73,127 +91,75 @@ fn enable_sse2() {
 }
 
 #[cfg(not(test))]
-#[allow(unused)]
-/// Setup page tables to provide an identity mapping over the full 4GiB range
-fn setup_pagetables() {
-    const ADDRESS_SPACE_GIB: u64 = 64;
-    let pte = mem::MemoryRegion::new(0xb000, 512 * ADDRESS_SPACE_GIB * 8);
-    for i in 0..(512 * ADDRESS_SPACE_GIB) {
-        pte.io_write_u64(i * 8, (i << 21) + 0x83u64)
-    }
+// Populate allocator from E820, fixed ranges for the firmware and the loaded binary.
+pub fn initialize_memory(hob: *const c_void) {
 
-    let pde = mem::MemoryRegion::new(0xa000, 4096);
-    for i in 0..ADDRESS_SPACE_GIB {
-        pde.io_write_u64(i * 8, (0xb000u64 + (0x1000u64 * i)) | 0x03);
-    }
+  unsafe {
+    let mut hob_header : *const Header = hob as *const Header;
 
-    log!("Page tables setup\n");
+    loop {
+      let header = transmute::<*const Header, &Header>(hob_header);
+      match header.r#type {
+        HOB_TYPE_RESOURCE_DESCRIPTOR => {
+          let resource_hob = transmute::<*const Header, &ResourceDescription>(hob_header);
+          if resource_hob.resource_type == RESOURCE_SYSTEM_MEMORY {
+            ALLOCATOR.lock().add_initial_allocation(
+                MemoryType::ConventionalMemory,
+                resource_hob.resource_length / PAGE_SIZE,
+                resource_hob.physical_start,
+                MEMORY_WB,
+                );
+          }
+        }
+        HOB_TYPE_END_OF_HOB_LIST => {
+          break;
+        }
+        _ => {}
+      }
+      let addr = hob_header as usize + header.length as usize;
+      hob_header = addr as *const Header;
+    }
+  }
+
+  unsafe {
+    let mut hob_header : *const Header = hob as *const Header;
+
+    loop {
+      let header = transmute::<*const Header, &Header>(hob_header);
+      match header.r#type {
+        HOB_TYPE_MEMORY_ALLOCATION => {
+          let allocation_hob = transmute::<*const Header, &MemoryAllocation>(hob_header);
+          ALLOCATOR.lock().allocate_pages(
+              AllocateType::AllocateAddress,
+              allocation_hob.alloc_descriptor.memory_type,
+              allocation_hob.alloc_descriptor.memory_length / PAGE_SIZE,
+              allocation_hob.alloc_descriptor.memory_base_address,
+              );
+        }
+        HOB_TYPE_END_OF_HOB_LIST => {
+          break;
+        }
+        _ => {}
+      }
+      let addr = hob_header as usize + header.length as usize;
+      hob_header = addr as *const Header;
+    }
+  }
 }
 
 #[cfg(not(test))]
-const VIRTIO_PCI_VENDOR_ID: u16 = 0x1af4;
-#[cfg(not(test))]
-const VIRTIO_PCI_BLOCK_DEVICE_ID: u16 = 0x1042;
-
-#[cfg(not(test))]
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
-//    unsafe {
-//        asm!("movq $$0x180000, %rsp");
-//    }
+pub extern "win64" fn _start(hob: *const c_void) -> ! {
 
-    log!("Starting..\n");
+    log!("Starting UEFI hob - {:p}\n", hob);
+
+    pi::hob_lib::dump_hob (hob);
+
+    initialize_memory(hob);
 
     enable_sse2();
-//    setup_pagetables();
 
-    pci::print_bus();
+    efi::enter_uefi(hob);
 
-    let mut pci_transport;
-    let mut mmio_transport;
-
-    let mut device = if let Some(pci_device) =
-        pci::search_bus(VIRTIO_PCI_VENDOR_ID, VIRTIO_PCI_BLOCK_DEVICE_ID)
-    {
-        pci_transport = pci::VirtioPciTransport::new(pci_device);
-        block::VirtioBlockDevice::new(&mut pci_transport)
-    } else {
-        mmio_transport = mmio::VirtioMMIOTransport::new(0xd000_0000u64);
-        block::VirtioBlockDevice::new(&mut mmio_transport)
-    };
-
-    log!("device.init...\n");
-
-    match device.init() {
-        Err(_) => {
-            log!("Error configuring block device\n");
-            i8042_reset();
-        }
-        Ok(_) => log!(
-            "Virtio block device configured. Capacity: {} sectors\n",
-            device.get_capacity()
-        ),
-    }
-
-    let mut f;
-
-    log!("find_efi_partition...\n");
-
-    match part::find_efi_partition(&device) {
-        Ok((start, end)) => {
-            log!("Found EFI partition\n");
-            f = fat::Filesystem::new(&device, start, end);
-            if f.init().is_err() {
-                log!("Failed to create filesystem\n");
-                i8042_reset();
-            }
-        }
-        Err(_) => {
-            log!("Failed to find EFI partition\n");
-            i8042_reset();
-        }
-    }
-
-    log!("Filesystem ready\n");
-
-    let jump_address;
-
-    match loader::load_default_entry(&f) {
-        Ok(addr) => {
-            jump_address = addr;
-        }
-        Err(_) => {
-            log!("Error loading default entry\n");
-            match f.open("/EFI/BOOT/BOOTX64 EFI") {
-                Ok(mut file) => {
-                    log!("Found bootloader (BOOTX64.EFI)\n");
-                    let mut l = pe::Loader::new(&mut file);
-                    match l.load(0x20_0000) {
-                        Ok((a, size)) => {
-                            log!("Executable loaded\n");
-                            efi::efi_exec(a, 0x20_0000, size, &f);
-                            i8042_reset();
-                        }
-                        Err(e) => match e {
-                            pe::Error::FileError => log!("File error\n"),
-                            pe::Error::InvalidExecutable => log!("Invalid executable\n"),
-                        },
-                    }
-                }
-                Err(_) => log!("Failed to find bootloader\n"),
-            }
-            i8042_reset();
-        }
-    }
-
-    device.reset();
-
-    log!("Jumping to kernel\n");
-
-    // Rely on x86 C calling convention where second argument is put into %rsi register
-    let ptr = jump_address as *const ();
-    let code: extern "C" fn(u64, u64) = unsafe { core::mem::transmute(ptr) };
-    (code)(0 /* dummy value */, bzimage::ZERO_PAGE_START as u64);
-
-    i8042_reset()
+    //i8042_reset();
 }

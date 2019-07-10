@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(unused)]
+
 use core::ffi::c_void;
 
 use r_efi::efi::{AllocateType, Char16, Guid, MemoryType, Status};

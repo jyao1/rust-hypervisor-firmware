@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(unused)]
+
 const PAGE_SIZE: u64 = 4096;
 
 use r_efi::efi::{AllocateType, MemoryType, PhysicalAddress, Status, VirtualAddress};
@@ -52,6 +54,7 @@ impl Allocator {
         address: u64,
         attributes: u64,
     ) -> Status {
+        log!("add_initial_allocation {} : 0x{:016x}-0x{:016x}\n", memory_type as u32, address, address + page_count * PAGE_SIZE - 1);
         self.key += 1;
 
         if self.first_allocation == None {
@@ -194,6 +197,7 @@ impl Allocator {
         page_count: u64,
         address: u64,
     ) -> (Status, u64) {
+        log!("allocate_pages {} : 0x{:016x}-0x{:016x} ({})\n", memory_type as u32, address, address + page_count * PAGE_SIZE - 1, allocate_type as u32);
         let dest = self.find_free_memory(allocate_type, page_count, address);
 
         if dest == None {
