@@ -78,41 +78,40 @@ fn dump_cpu_hob(cpu_hob: & Cpu) {
 
 #[cfg(not(test))]
 pub fn dump_hob(hob: *const c_void) {
-  unsafe {
-    let mut hob_header : *const Header = hob as *const Header;
 
-    loop {
-      let header = transmute::<*const Header, &Header>(hob_header);
-      match header.r#type {
-        HOB_TYPE_HANDOFF => {
-          let phit_hob = transmute::<*const Header, &HandoffInfoTable>(hob_header);
-          dump_phit_hob (phit_hob);
-        }
-        HOB_TYPE_RESOURCE_DESCRIPTOR => {
-          let resource_hob = transmute::<*const Header, &ResourceDescription>(hob_header);
-          dump_resource_hob (resource_hob);
-        }
-        HOB_TYPE_MEMORY_ALLOCATION => {
-          let allocation_hob = transmute::<*const Header, &MemoryAllocation>(hob_header);
-          dump_allocation_hob (allocation_hob);
-        }
-        HOB_TYPE_FV => {
-          let fv_hob = transmute::<*const Header, &FirmwareVolume>(hob_header);
-          dump_fv_hob (fv_hob);
-        }
-        HOB_TYPE_CPU => {
-          let cpu_hob = transmute::<*const Header, &Cpu>(hob_header);
-          dump_cpu_hob (cpu_hob);
-        }
-        HOB_TYPE_END_OF_HOB_LIST => {
-          break;
-        }
-        _ => {
-          dump_hob_header (header);
-        }
+  let mut hob_header : *const Header = hob as *const Header;
+
+  loop {
+    let header = unsafe {transmute::<*const Header, &Header>(hob_header)};
+    match header.r#type {
+      HOB_TYPE_HANDOFF => {
+        let phit_hob = unsafe {transmute::<*const Header, &HandoffInfoTable>(hob_header)};
+        dump_phit_hob (phit_hob);
       }
-      let addr = hob_header as usize + header.length as usize;
-      hob_header = addr as *const Header;
+      HOB_TYPE_RESOURCE_DESCRIPTOR => {
+        let resource_hob = unsafe {transmute::<*const Header, &ResourceDescription>(hob_header)};
+        dump_resource_hob (resource_hob);
+      }
+      HOB_TYPE_MEMORY_ALLOCATION => {
+        let allocation_hob = unsafe {transmute::<*const Header, &MemoryAllocation>(hob_header)};
+        dump_allocation_hob (allocation_hob);
+      }
+      HOB_TYPE_FV => {
+        let fv_hob = unsafe {transmute::<*const Header, &FirmwareVolume>(hob_header)};
+        dump_fv_hob (fv_hob);
+      }
+      HOB_TYPE_CPU => {
+        let cpu_hob = unsafe {transmute::<*const Header, &Cpu>(hob_header)};
+        dump_cpu_hob (cpu_hob);
+      }
+      HOB_TYPE_END_OF_HOB_LIST => {
+        break;
+      }
+      _ => {
+        dump_hob_header (header);
+      }
     }
+    let addr = hob_header as usize + header.length as usize;
+    hob_header = addr as *const Header;
   }
 }

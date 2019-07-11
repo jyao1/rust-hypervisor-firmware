@@ -28,20 +28,8 @@ mod common;
 use core::panic::PanicInfo;
 
 use core::ffi::c_void;
-use core::mem::transmute;
 
 use cpuio::Port;
-
-use r_efi::efi::{
-    AllocateType, MemoryType, MEMORY_WB
-};
-
-use crate::pi::hob::{
-  Header, MemoryAllocation, ResourceDescription,
-  RESOURCE_SYSTEM_MEMORY, HOB_TYPE_MEMORY_ALLOCATION, HOB_TYPE_RESOURCE_DESCRIPTOR, HOB_TYPE_END_OF_HOB_LIST
-  };
-
-use crate::efi::{PAGE_SIZE, ALLOCATOR};
 
 mod block;
 mod bzimage;
@@ -91,71 +79,10 @@ fn enable_sse2() {
 }
 
 #[cfg(not(test))]
-// Populate allocator from E820, fixed ranges for the firmware and the loaded binary.
-pub fn initialize_memory(hob: *const c_void) {
-
-  unsafe {
-    let mut hob_header : *const Header = hob as *const Header;
-
-    loop {
-      let header = transmute::<*const Header, &Header>(hob_header);
-      match header.r#type {
-        HOB_TYPE_RESOURCE_DESCRIPTOR => {
-          let resource_hob = transmute::<*const Header, &ResourceDescription>(hob_header);
-          if resource_hob.resource_type == RESOURCE_SYSTEM_MEMORY {
-            ALLOCATOR.lock().add_initial_allocation(
-                MemoryType::ConventionalMemory,
-                resource_hob.resource_length / PAGE_SIZE,
-                resource_hob.physical_start,
-                MEMORY_WB,
-                );
-          }
-        }
-        HOB_TYPE_END_OF_HOB_LIST => {
-          break;
-        }
-        _ => {}
-      }
-      let addr = hob_header as usize + header.length as usize;
-      hob_header = addr as *const Header;
-    }
-  }
-
-  unsafe {
-    let mut hob_header : *const Header = hob as *const Header;
-
-    loop {
-      let header = transmute::<*const Header, &Header>(hob_header);
-      match header.r#type {
-        HOB_TYPE_MEMORY_ALLOCATION => {
-          let allocation_hob = transmute::<*const Header, &MemoryAllocation>(hob_header);
-          ALLOCATOR.lock().allocate_pages(
-              AllocateType::AllocateAddress,
-              allocation_hob.alloc_descriptor.memory_type,
-              allocation_hob.alloc_descriptor.memory_length / PAGE_SIZE,
-              allocation_hob.alloc_descriptor.memory_base_address,
-              );
-        }
-        HOB_TYPE_END_OF_HOB_LIST => {
-          break;
-        }
-        _ => {}
-      }
-      let addr = hob_header as usize + header.length as usize;
-      hob_header = addr as *const Header;
-    }
-  }
-}
-
-#[cfg(not(test))]
 #[no_mangle]
 pub extern "win64" fn _start(hob: *const c_void) -> ! {
 
     log!("Starting UEFI hob - {:p}\n", hob);
-
-    pi::hob_lib::dump_hob (hob);
-
-    initialize_memory(hob);
 
     enable_sse2();
 

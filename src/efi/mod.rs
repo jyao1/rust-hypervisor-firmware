@@ -16,6 +16,7 @@
 
 mod alloc;
 mod file;
+mod init;
 
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -37,6 +38,11 @@ use r_efi::protocols::simple_text_output::Protocol as SimpleTextOutputProtocol;
 use r_efi::{eficall, eficall_abi};
 
 use core::ffi::c_void;
+
+use crate::pi::hob::{
+  Header, MemoryAllocation, ResourceDescription,
+  RESOURCE_SYSTEM_MEMORY, HOB_TYPE_MEMORY_ALLOCATION, HOB_TYPE_RESOURCE_DESCRIPTOR, HOB_TYPE_END_OF_HOB_LIST
+  };
 
 use alloc::Allocator;
 
@@ -855,6 +861,12 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
         number_of_table_entries: 0,
         configuration_table: &mut ct,
     };
+    
+    crate::pi::hob_lib::dump_hob (hob);
+
+    crate::efi::init::initialize_memory(hob);
+
+    crate::efi::init::find_loader (hob);
 
     log!("Core Init Done\n");
     loop {}

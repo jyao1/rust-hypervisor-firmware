@@ -42,11 +42,17 @@ impl MemoryRegion {
         unsafe { core::slice::from_raw_parts_mut((self.base + offset) as *mut T, length as usize) }
     }
 
+    pub fn as_slice<T>(& self, offset: u64, length: u64) -> & [T] {
+        assert!((offset + (length * core::mem::size_of::<T>() as u64)) <= self.length);
+        unsafe { core::slice::from_raw_parts((self.base + offset) as *const T, length as usize) }
+    }
+
     /// Read a value from a given offset
-    fn read<T>(&self, offset: u64) -> T
+    pub fn read<T>(&self, offset: u64) -> T
     where
         T: Copy,
     {
+        log!("in read - size {}\n", core::mem::size_of::<T>());
         assert!((offset + (core::mem::size_of::<T>() - 1) as u64) < self.length);
         unsafe { *((self.base + offset) as *const T) }
     }
