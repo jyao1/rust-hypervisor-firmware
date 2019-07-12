@@ -16,6 +16,9 @@
 
 mod alloc;
 mod file;
+mod device_path;
+mod image;
+mod peloader;
 mod init;
 
 use lazy_static::lazy_static;
@@ -33,7 +36,8 @@ use r_efi::protocols::simple_text_input::Protocol as SimpleTextInputProtocol;
 use r_efi::protocols::simple_text_output::Mode as SimpleTextOutputMode;
 use r_efi::protocols::simple_text_output::Protocol as SimpleTextOutputProtocol;
 //use r_efi::protocols::loaded_image::Protocol as LoadedImageProtocol;
-//use r_efi::protocols::device_path::Protocol as DevicePathProtocol;
+use r_efi::protocols::device_path::Protocol as DevicePathProtocol;
+use crate::efi::device_path::MemoryMaped as MemoryMappedDevicePathProtocol;
 
 use r_efi::{eficall, eficall_abi};
 
@@ -45,9 +49,14 @@ use crate::pi::hob::{
   };
 
 use alloc::Allocator;
+use image::Image;
 
 lazy_static! {
     pub static ref ALLOCATOR: Mutex<Allocator> = Mutex::new(Allocator::new());
+}
+
+lazy_static! {
+    pub static ref IMAGE: Mutex<Image> = Mutex::new(Image::new());
 }
 
 #[cfg(not(test))]
@@ -506,21 +515,47 @@ pub extern "win64" fn install_configuration_table(_: *mut Guid, _: *mut c_void) 
 
 #[cfg(not(test))]
 pub extern "win64" fn load_image(
-    _: Boolean,
-    _: Handle,
-    _: *mut c_void,
-    _: *mut c_void,
-    _: usize,
-    _: *mut Handle,
+    boot_policy: Boolean,
+    parent_image_handle: Handle,
+    device_path: *mut c_void,
+    source_buffer: *mut c_void,
+    source_size: usize,
+    image_handle: *mut Handle,
 ) -> Status {
     crate::log!("EFI_STUB: load_image\n");
-    Status::UNSUPPORTED
+
+    let (status, new_image_handle) = IMAGE.lock().load_image(
+        source_buffer,
+        source_size,
+    );
+
+    if status == Status::SUCCESS {
+        if image_handle != core::ptr::null_mut() {
+          unsafe { *image_handle = new_image_handle };
+        };
+    }
+
+    status
 }
 
 #[cfg(not(test))]
-pub extern "win64" fn start_image(_: Handle, _: *mut usize, _: *mut *mut Char16) -> Status {
+pub extern "win64" fn start_image(
+    image_handle: Handle,
+    exit_data_size: *mut usize,
+    exit_data: *mut *mut Char16
+) -> Status {
     crate::log!("EFI_STUB: start_image\n");
-    Status::UNSUPPORTED
+
+    let (status, new_exit_data_size, new_exit_data) = IMAGE.lock().start_image(image_handle);
+
+    if exit_data_size != core::ptr::null_mut() {
+      unsafe { *exit_data_size = new_exit_data_size };
+    }
+    if exit_data != core::ptr::null_mut() {
+      unsafe { *exit_data = new_exit_data };
+    }
+
+    status
 }
 
 #[cfg(not(test))]
@@ -727,24 +762,22 @@ pub struct LoadedImageProtocol {
     ) -> Status},
 }
 
-#[cfg(not(test))]
-pub fn enter_uefi(hob: *const c_void) -> ! {
-    let mut stdin = SimpleTextInputProtocol {
-        reset: stdin_reset,
-        read_key_stroke: stdin_read_key_stroke,
-        wait_for_key: 0 as Event,
-    };
+pub static mut STDIN : SimpleTextInputProtocol = SimpleTextInputProtocol {
+          reset: stdin_reset,
+          read_key_stroke: stdin_read_key_stroke,
+          wait_for_key: 0 as Event,
+      };
 
-    let mut stdout_mode = SimpleTextOutputMode {
+pub static mut STDOUT_MODE : SimpleTextOutputMode = SimpleTextOutputMode {
         max_mode: 1,
         mode: 0,
         attribute: 0,
         cursor_column: 0,
         cursor_row: 0,
         cursor_visible: Boolean::FALSE,
-    };
+      };
 
-    let mut stdout = SimpleTextOutputProtocol {
+pub static mut STDOUT : SimpleTextOutputProtocol = SimpleTextOutputProtocol {
         reset: stdout_reset,
         output_string: stdout_output_string,
         test_string: stdout_test_string,
@@ -754,10 +787,10 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
         clear_screen: stdout_clear_screen,
         set_cursor_position: stdout_set_cursor_position,
         enable_cursor: stdout_enable_cursor,
-        mode: &mut stdout_mode,
-    };
+        mode: core::ptr::null_mut(),
+      };
 
-    let mut rs = efi::RuntimeServices {
+pub static mut RT : efi::RuntimeServices = efi::RuntimeServices {
         hdr: efi::TableHeader {
             signature: efi::RUNTIME_SERVICES_SIGNATURE,
             revision: efi::RUNTIME_SERVICES_REVISION,
@@ -779,9 +812,9 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
         update_capsule,
         query_capsule_capabilities,
         query_variable_info,
-    };
+      };
 
-    let mut bs = efi::BootServices {
+pub static mut BS : efi::BootServices = efi::BootServices {
         hdr: efi::TableHeader {
             signature: efi::BOOT_SERVICES_SIGNATURE,
             revision: efi::BOOT_SERVICES_REVISION,
@@ -833,14 +866,14 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
         set_mem,
         create_event_ex,
         reserved: core::ptr::null_mut(),
-    };
+      };
 
-    let mut ct = efi::ConfigurationTable {
+pub static mut CT : efi::ConfigurationTable = efi::ConfigurationTable {
         vendor_guid: Guid::from_fields(0, 0, 0, 0, 0, &[0; 6]), // TODO
         vendor_table: core::ptr::null_mut(),
-    };
+      };
 
-    let mut st = efi::SystemTable {
+pub static mut ST : efi::SystemTable = efi::SystemTable {
         hdr: efi::TableHeader {
             signature: efi::SYSTEM_TABLE_SIGNATURE,
             revision: efi::SYSTEM_TABLE_REVISION_2_70,
@@ -851,22 +884,70 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
         firmware_vendor: core::ptr::null_mut(), // TODO,
         firmware_revision: 0,
         console_in_handle: STDIN_HANDLE,
-        con_in: &mut stdin,
+        con_in: core::ptr::null_mut(),
         console_out_handle: STDOUT_HANDLE,
-        con_out: &mut stdout,
+        con_out: core::ptr::null_mut(),
         standard_error_handle: STDERR_HANDLE,
-        std_err: &mut stdout,
-        runtime_services: &mut rs,
-        boot_services: &mut bs,
+        std_err: core::ptr::null_mut(),
+        runtime_services: core::ptr::null_mut(),
+        boot_services: core::ptr::null_mut(),
         number_of_table_entries: 0,
-        configuration_table: &mut ct,
-    };
+        configuration_table: core::ptr::null_mut(),
+      };
+
+#[cfg(not(test))]
+pub fn enter_uefi(hob: *const c_void) -> ! {
+
+    unsafe {
+      STDOUT.mode = &mut STDOUT_MODE;
+      ST.con_in = &mut STDIN;
+      ST.con_out = &mut STDOUT;
+      ST.std_err = &mut STDOUT;
+      ST.runtime_services = &mut RT;
+      ST.boot_services = &mut BS;
+      ST.configuration_table = &mut CT;
+    }
     
     crate::pi::hob_lib::dump_hob (hob);
 
     crate::efi::init::initialize_memory(hob);
 
-    crate::efi::init::find_loader (hob);
+    let (image, size) = crate::efi::init::find_loader (hob);
+
+    let mut image_path = MemoryMappedDevicePathProtocol {
+            header: DevicePathProtocol {
+                r#type: r_efi::protocols::device_path::TYPE_HARDWARE,
+            sub_type: r_efi::protocols::device_path::Hardware::SUBTYPE_MMAP,
+            length: [0, 24],
+        },
+        memory_type: MemoryType::BootServicesCode,
+        start_address: image as u64,
+        end_address: image as u64 + size as u64 - 1,
+    };
+
+    let mut image_handle : Handle = core::ptr::null_mut();
+    let status = load_image (
+                   Boolean::FALSE,
+                   core::ptr::null_mut(), // parent handle
+                   &mut image_path.header as *mut DevicePathProtocol as *mut c_void,
+                   image as *mut c_void,
+                   size,
+                   &mut image_handle
+                   );
+    match (status) {
+      Status::SUCCESS => {
+        let mut exit_data_size : usize = 0;
+        let mut exit_data : *mut Char16 = core::ptr::null_mut();
+        let status = start_image (
+                       image_handle,
+                       &mut exit_data_size as *mut usize,
+                       &mut exit_data as *mut *mut Char16
+                       );
+      },
+      _ => {
+        log!("load image fails {:?}\n", status);
+      },
+    }
 
     log!("Core Init Done\n");
     loop {}
