@@ -27,7 +27,7 @@ use core::mem::size_of;
 
 use crate::efi::peloader::*;
 
-pub const HANDLE_SIGNATURE: u32 = 0x4C444849; // 'I','H','D','L'
+const HANDLE_SIGNATURE: u32 = 0x49444849; // 'I','H','D','I'
 
 #[derive(Default)]
 struct ImageHandle {

@@ -18,6 +18,7 @@ mod alloc;
 mod file;
 mod device_path;
 mod image;
+mod handle_database;
 mod peloader;
 mod init;
 
@@ -49,10 +50,15 @@ use crate::pi::hob::{
   };
 
 use alloc::Allocator;
+use handle_database::HandleDatabase;
 use image::Image;
 
 lazy_static! {
     pub static ref ALLOCATOR: Mutex<Allocator> = Mutex::new(Allocator::new());
+}
+
+lazy_static! {
+    pub static ref HANDLE_DATABASE: Mutex<HandleDatabase> = Mutex::new(HandleDatabase::new());
 }
 
 lazy_static! {
@@ -424,13 +430,41 @@ pub extern "win64" fn check_event(_: Event) -> Status {
 
 #[cfg(not(test))]
 pub extern "win64" fn install_protocol_interface(
-    _: *mut Handle,
-    _: *mut Guid,
-    _: InterfaceType,
-    _: *mut c_void,
+    handle: *mut Handle,
+    guid: *mut Guid,
+    interface_type: InterfaceType,
+    interface: *mut c_void,
 ) -> Status {
-    crate::log!("EFI_STUB: install_protocol_interface\n");
-    Status::UNSUPPORTED
+    let guid_data = unsafe { (*guid).as_fields() };
+    crate::log!(
+      "EFI_STUB: install_protocol_interface - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
+      guid_data.0,
+      guid_data.1,
+      guid_data.2,
+      guid_data.3,
+      guid_data.4,
+      guid_data.5[0],
+      guid_data.5[1],
+      guid_data.5[2],
+      guid_data.5[3],
+      guid_data.5[4],
+      guid_data.5[5]
+      );
+
+    let (status, new_handle) =
+        HANDLE_DATABASE
+            .lock()
+            .install_protocol(
+                unsafe {*handle},
+                guid,
+                interface,
+            );
+    if status == Status::SUCCESS {
+        unsafe {
+            *handle = new_handle;
+        }
+    }
+    status
 }
 
 #[cfg(not(test))]
@@ -734,11 +768,26 @@ pub extern "win64" fn locate_protocol(guid: *mut Guid, _: *mut c_void, _: *mut *
 
 #[cfg(not(test))]
 pub extern "win64" fn install_multiple_protocol_interfaces(
-    _: *mut Handle,
-    _: *mut c_void,
-    _: *mut c_void,
+    handle: *mut Handle,
+    guid: *mut c_void,
+    interface: *mut c_void,
 ) -> Status {
-    crate::log!("EFI_STUB: install_multiple_protocol_interfaces\n");
+    let guid_ptr = guid as *mut Guid;
+    let guid_data = unsafe { (*guid_ptr).as_fields() };
+    crate::log!(
+      "EFI_STUB: install_multiple_protocol_interfaces - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
+      guid_data.0,
+      guid_data.1,
+      guid_data.2,
+      guid_data.3,
+      guid_data.4,
+      guid_data.5[0],
+      guid_data.5[1],
+      guid_data.5[2],
+      guid_data.5[3],
+      guid_data.5[4],
+      guid_data.5[5]
+      );
     Status::UNSUPPORTED
 }
 
@@ -759,13 +808,15 @@ pub extern "win64" fn calculate_crc32(_: *mut c_void, _: usize, _: *mut u32) -> 
 }
 
 #[cfg(not(test))]
-pub extern "win64" fn copy_mem(_: *mut c_void, _: *mut c_void, _: usize) {
+pub extern "win64" fn copy_mem(dest: *mut c_void, source: *mut c_void, size: usize) {
     crate::log!("EFI_STUB: copy_mem\n");
+    unsafe {core::ptr::copy (source, dest, size);}
 }
 
 #[cfg(not(test))]
-pub extern "win64" fn set_mem(_: *mut c_void, _: usize, _: u8) {
+pub extern "win64" fn set_mem(buffer: *mut c_void, size: usize, val: u8) {
     crate::log!("EFI_STUB: set_mem\n");
+    unsafe {core::ptr::write_bytes (buffer, val, size);}
 }
 
 #[cfg(not(test))]
@@ -775,14 +826,24 @@ pub extern "win64" fn create_event_ex(
     _: EventNotify,
     _: *const c_void,
     _: *const Guid,
-    _: *mut Event,
+    event: *mut Event,
 ) -> Status {
     crate::log!("EFI_STUB: create_event_ex\n");
-    Status::UNSUPPORTED
+
+    if event == core::ptr::null_mut() {
+        crate::log!("EFI_STUB: create_event_ex - NULL\n");
+        return Status::INVALID_PARAMETER;
+    }
+
+    unsafe {*event = core::ptr::null_mut();}
+
+    // TBD
+    Status::SUCCESS
 }
 
 #[cfg(not(test))]
 extern "win64" fn image_unload(_: Handle) -> Status {
+    crate::log!("EFI_STUB: image_unload\n");
     efi::Status::UNSUPPORTED
 }
 
