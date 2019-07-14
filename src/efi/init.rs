@@ -20,6 +20,7 @@ use r_efi::efi::{
     LocateSearchType, MemoryDescriptor, MemoryType, OpenProtocolInformationEntry, PhysicalAddress,
     ResetType, Status, Time, TimeCapabilities, TimerDelay, Tpl, MEMORY_WB
 };
+use r_efi::system::{VARIABLE_NON_VOLATILE, VARIABLE_BOOTSERVICE_ACCESS, VARIABLE_RUNTIME_ACCESS};
 
 use core::ffi::c_void;
 use core::mem::transmute;
@@ -89,3 +90,18 @@ pub fn find_loader(hob: *const c_void) -> (*const c_void, usize) {
   let (image, size) = find_image_in_fv (hob);
   (image, size)
 }
+
+#[cfg(not(test))]
+pub fn initialize_variable() {
+  let mut var_name: [Char16; 13] = [0x50, 0x6c, 0x61, 0x74, 0x66, 0x6F, 0x72, 0x6d, 0x4c, 0x61, 0x6e, 0x67, 0x00]; // L"PlatformLang"
+  let mut var_data: [u8; 3] = [0x65, 0x6e, 0x00]; // "en"
+  crate::efi::set_variable(
+    &mut var_name as *mut [Char16; 13] as *mut Char16,
+    &mut crate::efi::variable::GLOBAL_VARIABLE_GUID as *mut Guid,
+    VARIABLE_NON_VOLATILE | VARIABLE_BOOTSERVICE_ACCESS | VARIABLE_RUNTIME_ACCESS,
+    3,
+    &mut var_data as *mut [u8; 3] as *mut c_void
+    );
+}
+
+// 

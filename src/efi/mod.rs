@@ -19,6 +19,7 @@ mod file;
 mod device_path;
 mod image;
 mod handle_database;
+mod variable;
 mod peloader;
 mod init;
 
@@ -51,6 +52,9 @@ use crate::pi::hob::{
 
 use alloc::Allocator;
 use handle_database::HandleDatabase;
+use variable::Variable;
+use variable::MAX_VARIABLE_NAME;
+use variable::MAX_VARIABLE_DATA;
 use image::Image;
 
 lazy_static! {
@@ -59,6 +63,10 @@ lazy_static! {
 
 lazy_static! {
     pub static ref HANDLE_DATABASE: Mutex<HandleDatabase> = Mutex::new(HandleDatabase::new());
+}
+
+lazy_static! {
+    pub static ref VARIABLE: Mutex<Variable> = Mutex::new(Variable::new());
 }
 
 lazy_static! {
@@ -218,14 +226,74 @@ pub extern "win64" fn convert_pointer(_: usize, _: *mut *mut c_void) -> Status {
 
 #[cfg(not(test))]
 pub extern "win64" fn get_variable(
-    _: *mut Char16,
-    _: *mut Guid,
-    _: *mut u32,
-    _: *mut usize,
-    _: *mut core::ffi::c_void,
+    var_name: *mut Char16,
+    var_guid: *mut Guid,
+    attributes: *mut u32,
+    size: *mut usize,
+    data: *mut core::ffi::c_void,
 ) -> Status {
-    crate::log!("EFI_STUB: get_variable\n");
-    Status::UNSUPPORTED
+    crate::log!("EFI_STUB: get_variable ");
+
+    let mut string_end = false;
+    let mut name_buffer: [u8; MAX_VARIABLE_NAME] = [0; MAX_VARIABLE_NAME];
+    let mut name_len: usize = 0;
+    while name_len < MAX_VARIABLE_NAME {
+      name_buffer[name_len] = (unsafe { *var_name.add(name_len) } & 0xffu16) as u8;
+      crate::log!("{}", name_buffer[name_len] as char);
+      if name_buffer[name_len] == 0 {
+        string_end = true;
+        break;
+      }
+      name_len += 1;
+    }
+
+    let guid_data = unsafe { (*var_guid).as_fields() };
+    crate::log!(
+      " {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+      guid_data.0,
+      guid_data.1,
+      guid_data.2,
+      guid_data.3,
+      guid_data.4,
+      guid_data.5[0],
+      guid_data.5[1],
+      guid_data.5[2],
+      guid_data.5[3],
+      guid_data.5[4],
+      guid_data.5[5]
+      );
+    let guid_buffer : *mut [u8; 16] = unsafe { core::mem::transmute::<*mut Guid, *mut [u8; 16]>(var_guid) };
+
+    crate::log!("\n");
+
+    if !string_end {
+      crate::log!("name too long\n");
+      return Status::UNSUPPORTED;
+    }
+
+    let (status, var_attributes, var_size, var_data) = VARIABLE.lock().get_variable(
+                     &mut name_buffer as *mut [u8; MAX_VARIABLE_NAME],
+                     guid_buffer
+                     );
+
+    if (status == Status::NOT_FOUND) {
+      return status;
+    }
+
+    if unsafe {*size} < var_size {
+      unsafe {*size = var_size;}
+      return Status::BUFFER_TOO_SMALL;
+    }
+
+    unsafe {*size = var_size;}
+    let data_ptr : *mut c_void = unsafe { core::mem::transmute::<*mut [u8; MAX_VARIABLE_DATA], *mut c_void>(var_data) };
+    unsafe {core::ptr::copy_nonoverlapping (data_ptr, data, var_size);}
+
+    if attributes != core::ptr::null_mut() {
+      unsafe {*attributes = var_attributes;}
+    }
+
+    Status::SUCCESS
 }
 
 #[cfg(not(test))]
@@ -240,14 +308,67 @@ pub extern "win64" fn get_next_variable_name(
 
 #[cfg(not(test))]
 pub extern "win64" fn set_variable(
-    _: *mut Char16,
-    _: *mut Guid,
-    _: u32,
-    _: usize,
-    _: *mut c_void,
+    var_name: *mut Char16,
+    var_guid: *mut Guid,
+    attributes: u32,
+    size: usize,
+    data: *mut c_void,
 ) -> Status {
-    crate::log!("EFI_STUB: set_variable\n");
-    Status::UNSUPPORTED
+    crate::log!("EFI_STUB: set_variable");
+    
+    let mut string_end = false;
+    let mut name_buffer: [u8; MAX_VARIABLE_NAME] = [0; MAX_VARIABLE_NAME];
+    let mut name_len: usize = 0;
+    while name_len < MAX_VARIABLE_NAME {
+      name_buffer[name_len] = (unsafe { *var_name.add(name_len) } & 0xffu16) as u8;
+      crate::log!("{}", name_buffer[name_len] as char);
+      if name_buffer[name_len] == 0 {
+        string_end = true;
+        break;
+      }
+      name_len += 1;
+    }
+
+    let guid_data = unsafe { (*var_guid).as_fields() };
+    crate::log!(
+      " {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+      guid_data.0,
+      guid_data.1,
+      guid_data.2,
+      guid_data.3,
+      guid_data.4,
+      guid_data.5[0],
+      guid_data.5[1],
+      guid_data.5[2],
+      guid_data.5[3],
+      guid_data.5[4],
+      guid_data.5[5]
+      );
+    let guid_buffer : *mut [u8; 16] = unsafe { core::mem::transmute::<*mut Guid, *mut [u8; 16]>(var_guid) };
+
+    crate::log!("\n");
+
+    if !string_end {
+      crate::log!("name too long\n");
+      return Status::UNSUPPORTED;
+    }
+
+    if size > MAX_VARIABLE_DATA {
+      crate::log!("data too long\n");
+      return Status::UNSUPPORTED;
+    }
+
+    let data_buffer: *mut [u8; MAX_VARIABLE_DATA] = unsafe { core::mem::transmute::<*mut c_void, *mut [u8; MAX_VARIABLE_DATA]>(data) };
+
+    let (status) = VARIABLE.lock().set_variable(
+                     &mut name_buffer as *mut [u8; MAX_VARIABLE_NAME],
+                     guid_buffer,
+                     attributes,
+                     size,
+                     data_buffer
+                     );
+
+    status
 }
 
 #[cfg(not(test))]
@@ -1030,6 +1151,7 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
     crate::pi::hob_lib::dump_hob (hob);
 
     crate::efi::init::initialize_memory(hob);
+    crate::efi::init::initialize_variable ();
 
     let (image, size) = crate::efi::init::find_loader (hob);
 
