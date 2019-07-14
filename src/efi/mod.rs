@@ -460,6 +460,26 @@ pub extern "win64" fn handle_protocol(
     guid: *mut Guid,
     out: *mut *mut c_void,
 ) -> Status {
+    if guid == core::ptr::null_mut() {
+        crate::log!("EFI_STUB: handle_protocol - NULL\n");
+        return Status::INVALID_PARAMETER;
+    }
+    let guid_data = unsafe { (*guid).as_fields() };
+    crate::log!(
+      "EFI_STUB: handle_protocol - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
+      guid_data.0,
+      guid_data.1,
+      guid_data.2,
+      guid_data.3,
+      guid_data.4,
+      guid_data.5[0],
+      guid_data.5[1],
+      guid_data.5[2],
+      guid_data.5[3],
+      guid_data.5[4],
+      guid_data.5[5]
+      );
+
     if unsafe { *guid } == r_efi::protocols::loaded_image::PROTOCOL_GUID {
         unsafe {
             *out = handle;
@@ -491,12 +511,31 @@ pub extern "win64" fn register_protocol_notify(
 #[cfg(not(test))]
 pub extern "win64" fn locate_handle(
     _: LocateSearchType,
-    _: *mut Guid,
+    guid: *mut Guid,
     _: *mut c_void,
     _: *mut usize,
     _: *mut Handle,
 ) -> Status {
-    crate::log!("EFI_STUB: locate_handle\n");
+    if guid == core::ptr::null_mut() {
+        crate::log!("EFI_STUB: locate_handle - NULL\n");
+        return Status::INVALID_PARAMETER;
+    }
+    let guid_data = unsafe { (*guid).as_fields() };
+    crate::log!(
+      "EFI_STUB: locate_handle - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
+      guid_data.0,
+      guid_data.1,
+      guid_data.2,
+      guid_data.3,
+      guid_data.4,
+      guid_data.5[0],
+      guid_data.5[1],
+      guid_data.5[2],
+      guid_data.5[3],
+      guid_data.5[4],
+      guid_data.5[5]
+      );
+
     Status::UNSUPPORTED
 }
 
@@ -669,8 +708,27 @@ pub extern "win64" fn locate_handle_buffer(
 }
 
 #[cfg(not(test))]
-pub extern "win64" fn locate_protocol(_: *mut Guid, _: *mut c_void, _: *mut *mut c_void) -> Status {
-    crate::log!("EFI_STUB: locate_protocol\n");
+pub extern "win64" fn locate_protocol(guid: *mut Guid, _: *mut c_void, _: *mut *mut c_void) -> Status {
+    if guid == core::ptr::null_mut() {
+        crate::log!("EFI_STUB: locate_protocol - NULL\n");
+        return Status::INVALID_PARAMETER;
+    }
+    let guid_data = unsafe { (*guid).as_fields() };
+    crate::log!(
+      "EFI_STUB: locate_protocol - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
+      guid_data.0,
+      guid_data.1,
+      guid_data.2,
+      guid_data.3,
+      guid_data.4,
+      guid_data.5[0],
+      guid_data.5[1],
+      guid_data.5[2],
+      guid_data.5[3],
+      guid_data.5[4],
+      guid_data.5[5]
+      );
+
     Status::UNSUPPORTED
 }
 
