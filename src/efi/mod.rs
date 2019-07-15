@@ -30,7 +30,7 @@ use r_efi::efi;
 use r_efi::efi::{
     AllocateType, Boolean, CapsuleHeader, Char16, Event, EventNotify, Guid, Handle, InterfaceType,
     LocateSearchType, MemoryDescriptor, MemoryType, OpenProtocolInformationEntry, PhysicalAddress,
-    ResetType, Status, Time, TimeCapabilities, TimerDelay, Tpl,
+    ResetType, Status, Time, TimeCapabilities, TimerDelay, Tpl, OPEN_PROTOCOL_GET_PROTOCOL
 };
 
 use r_efi::protocols::simple_text_input::InputKey;
@@ -808,19 +808,50 @@ pub extern "win64" fn disconnect_controller(_: Handle, _: Handle, _: Handle) -> 
 pub extern "win64" fn open_protocol(
     handle: Handle,
     guid: *mut Guid,
-    out: *mut *mut c_void,
-    _: Handle,
-    _: Handle,
-    _: u32,
+    out_interface: *mut *mut c_void,
+    agent_handle: Handle,
+    controller_handle: Handle,
+    attributes: u32,
 ) -> Status {
     if unsafe { *guid } == r_efi::protocols::loaded_image::PROTOCOL_GUID {
         unsafe {
-            *out = handle;
+            *out_interface = handle;
         }
         return Status::SUCCESS;
     }
-    crate::log!("EFI_STUB: open_protocol\n");
-    Status::UNSUPPORTED
+    if guid == core::ptr::null_mut() {
+        crate::log!("EFI_STUB: open_protocol - NULL\n");
+        return Status::INVALID_PARAMETER;
+    }
+    let guid_data = unsafe { (*guid).as_fields() };
+    crate::log!(
+      "EFI_STUB: open_protocol - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
+      guid_data.0,
+      guid_data.1,
+      guid_data.2,
+      guid_data.3,
+      guid_data.4,
+      guid_data.5[0],
+      guid_data.5[1],
+      guid_data.5[2],
+      guid_data.5[3],
+      guid_data.5[4],
+      guid_data.5[5]
+      );
+
+    log!("attributes - {}\n", attributes);
+
+    if attributes != OPEN_PROTOCOL_GET_PROTOCOL {
+      return Status::UNSUPPORTED;
+    }
+
+    unsafe {*out_interface = core::ptr::null_mut();}
+    let (status, interface) = HANDLE_DATABASE.lock().handle_protocol (handle, guid);
+    if status == Status::SUCCESS {
+      unsafe {*out_interface = interface;}
+    }
+
+    status
 }
 
 #[cfg(not(test))]
@@ -852,14 +883,50 @@ pub extern "win64" fn protocols_per_handle(
 
 #[cfg(not(test))]
 pub extern "win64" fn locate_handle_buffer(
-    _: LocateSearchType,
-    _: *mut Guid,
-    _: *mut c_void,
-    _: *mut usize,
-    _: *mut *mut Handle,
+    locate_search_type: LocateSearchType,
+    guid: *mut Guid,
+    search_key: *mut c_void,
+    no_handles: *mut usize,
+    buffer: *mut *mut Handle,
 ) -> Status {
-    crate::log!("EFI_STUB: locate_handle_buffer\n");
-    Status::UNSUPPORTED
+    if guid == core::ptr::null_mut() {
+        crate::log!("EFI_STUB: locate_handle_buffer - NULL\n");
+        return Status::INVALID_PARAMETER;
+    }
+    let guid_data = unsafe { (*guid).as_fields() };
+    crate::log!(
+      "EFI_STUB: locate_handle_buffer - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
+      guid_data.0,
+      guid_data.1,
+      guid_data.2,
+      guid_data.3,
+      guid_data.4,
+      guid_data.5[0],
+      guid_data.5[1],
+      guid_data.5[2],
+      guid_data.5[3],
+      guid_data.5[4],
+      guid_data.5[5]
+      );
+
+    log!("locate_search_type - {}\n", locate_search_type as u32);
+    log!("search_key - {:p}\n", search_key);
+
+    if locate_search_type as u32 != LocateSearchType::ByProtocol as u32 {
+      return Status::UNSUPPORTED;
+    }
+    if search_key != core::ptr::null_mut() {
+      return Status::UNSUPPORTED;
+    }
+
+    let (status, handle_count, handle_buffer) = HANDLE_DATABASE.lock().locate_handle_buffer(guid);
+    if status == Status::SUCCESS {
+        unsafe {
+            *no_handles = handle_count;
+            *buffer = handle_buffer as *mut Handle;
+        }
+    }
+    status
 }
 
 #[cfg(not(test))]

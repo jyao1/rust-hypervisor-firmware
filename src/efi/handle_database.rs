@@ -77,8 +77,8 @@ impl HandleDatabase {
           _ => {return (status, core::ptr::null_mut());},
         }
         assert!(cur_handle != core::ptr::null_mut());
-        let protocol_handle = unsafe {transmute::<Handle, &mut ProtocolHandle>(cur_handle)};
-        assert!(protocol_handle.signature == HANDLE_SIGNATURE);
+        let protocol_handle = unsafe {transmute::<Handle, *mut ProtocolHandle>(cur_handle)};
+        unsafe { assert!((*protocol_handle).signature == HANDLE_SIGNATURE); }
 
         let (status, mut cur_protocol_struct) = self.get_protocol (protocol_handle, guid);
         match status {
@@ -101,35 +101,101 @@ impl HandleDatabase {
         (Status::SUCCESS, cur_handle)
     }
 
+    pub fn locate_handle_buffer (
+        &mut self,
+        guid : *mut Guid,
+    ) -> (Status, usize, *mut Handle) {
+
+        let mut count = 0usize;
+        for index in 0 .. self.protocol_handle_count {
+          let protocol_handle = &mut self.protocol_handle[index] as *mut ProtocolHandle;
+          let (status, protocol_struct) = self.get_protocol (protocol_handle, guid);
+          if status == Status::SUCCESS {
+            count = count + 1;
+          }
+        }
+
+        if count == 0 {
+          return (Status::NOT_FOUND, 0, core::ptr::null_mut());
+        }
+
+        let mut handle_buffer_address: *mut c_void = core::ptr::null_mut();
+        let status = crate::efi::allocate_pool (
+                       MemoryType::BootServicesData,
+                       count * size_of::<Handle>() as usize,
+                       &mut handle_buffer_address);
+        if status != Status::SUCCESS {
+          log!("locate_handle_buffer - fail on allocate pool\n");
+          return (status, 0, core::ptr::null_mut())
+        }
+
+        let address = handle_buffer_address as usize;
+        let handle_buffer = address as *mut [Handle; MAX_HANDLE_STRUCT];
+        
+        let mut count = 0usize;
+        for index in 0 .. self.protocol_handle_count {
+          let protocol_handle = &mut self.protocol_handle[index] as *mut ProtocolHandle;
+          let (status, protocol_struct) = self.get_protocol (protocol_handle, guid);
+          if status == Status::SUCCESS {
+            unsafe {(*handle_buffer)[count] = protocol_handle as Handle;}
+            count = count + 1;
+          }
+        }
+
+        (Status::SUCCESS, count, handle_buffer_address as *mut Handle)
+    }
+
+    pub fn handle_protocol (
+        &mut self,
+        handle: Handle,
+        guid: *mut Guid,
+        ) -> (Status, *mut c_void) {
+
+        let protocol_handle : *mut ProtocolHandle = handle as *mut ProtocolHandle;
+        if unsafe {(*protocol_handle).signature} != HANDLE_SIGNATURE {
+          return (Status::INVALID_PARAMETER, core::ptr::null_mut());
+        }
+        let (status, protocol_struct) = self.get_protocol (protocol_handle, guid);
+        if status != Status::SUCCESS {
+          return (status, core::ptr::null_mut());
+        }
+
+        unsafe { (Status::SUCCESS, (*protocol_struct).interface as *mut c_void) }
+    }
+
     fn get_new_protocol (
         &mut self,
-        protocol_handle : &mut ProtocolHandle
+        protocol_handle : *mut ProtocolHandle
         ) -> (Status, *mut ProtocolStruct) {
-        if (protocol_handle.protocol_count >= MAX_PROTOCOL_STRUCT) {
-          return (Status::OUT_OF_RESOURCES, core::ptr::null_mut());
+        unsafe {
+          if ((*protocol_handle).protocol_count >= MAX_PROTOCOL_STRUCT) {
+            return (Status::OUT_OF_RESOURCES, core::ptr::null_mut());
+          }
+          let protocol_struct = &mut (*protocol_handle).protocol_struct[(*protocol_handle).protocol_count];
+          (*protocol_handle).protocol_count = (*protocol_handle).protocol_count + 1;
+
+          protocol_struct.guid = 0;
+          protocol_struct.interface = 0;
+
+          (Status::SUCCESS, protocol_struct as *mut ProtocolStruct)
         }
-        let protocol_struct = &mut protocol_handle.protocol_struct[protocol_handle.protocol_count];
-        protocol_handle.protocol_count = protocol_handle.protocol_count + 1;
-
-        protocol_struct.guid = 0;
-        protocol_struct.interface = 0;
-
-        (Status::SUCCESS, protocol_struct as *mut ProtocolStruct)
     }
     
     fn get_protocol (
         &mut self,
-        protocol_handle : &mut ProtocolHandle,
+        protocol_handle : *mut ProtocolHandle,
         guid : *mut Guid,
         ) -> (Status, *mut ProtocolStruct) {
-        assert!(protocol_handle.signature == HANDLE_SIGNATURE);
-        for index in 0 .. protocol_handle.protocol_count {
-          let guid_addr = protocol_handle.protocol_struct[index].guid;
-          let guid_ptr : *mut Guid = guid_addr as *mut c_void as *mut Guid;
-          let guid1_data = unsafe {(*guid).as_fields()};
-          let guid2_data = unsafe {(*guid_ptr).as_fields()};
-          if guid1_data == guid2_data {
-            return (Status::SUCCESS, &mut protocol_handle.protocol_struct[index]);
+        unsafe {
+          assert!((*protocol_handle).signature == HANDLE_SIGNATURE);
+          for index in 0 .. (*protocol_handle).protocol_count {
+            let guid_addr = (*protocol_handle).protocol_struct[index].guid;
+            let guid_ptr : *mut Guid = guid_addr as *mut c_void as *mut Guid;
+            let guid1_data = (*guid).as_fields();
+            let guid2_data = (*guid_ptr).as_fields();
+            if guid1_data == guid2_data {
+              return (Status::SUCCESS, &mut (*protocol_handle).protocol_struct[index]);
+            }
           }
         }
         (Status::NOT_FOUND, core::ptr::null_mut())
