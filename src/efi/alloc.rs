@@ -20,7 +20,7 @@ use r_efi::efi::{AllocateType, MemoryType, PhysicalAddress, Status, VirtualAddre
 
 // Copied from r_efi so we can do Default on it
 #[repr(C)]
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct MemoryDescriptor {
     pub r#type: u32,
     pub physical_start: PhysicalAddress,
@@ -29,20 +29,40 @@ pub struct MemoryDescriptor {
     pub attribute: u64,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 struct Allocation {
     in_use: bool,
     next_allocation: Option<usize>,
     descriptor: MemoryDescriptor,
 }
 
-const MAX_ALLOCATIONS: usize = 32;
+const MAX_ALLOCATIONS: usize = 128;
 
-#[derive(Default)]
+#[derive(Clone)]
 pub struct Allocator {
     allocations: [Allocation; MAX_ALLOCATIONS],
     key: usize,
     first_allocation: Option<usize>,
+}
+
+impl Default for Allocator {
+    fn default() -> Allocator {
+      Allocator {
+        allocations: [Allocation{
+                        in_use: false,
+                        next_allocation: None,
+                        descriptor: MemoryDescriptor{
+                                      r#type: 0,
+                                      physical_start: 0,
+                                      virtual_start: 0,
+                                      number_of_pages: 0,
+                                      attribute: 0,
+                                      },
+                      } ; MAX_ALLOCATIONS],
+        key: 0,
+        first_allocation: None,
+      }
+    }
 }
 
 impl Allocator {
@@ -197,7 +217,7 @@ impl Allocator {
         page_count: u64,
         address: u64,
     ) -> (Status, u64) {
-        log!("allocate_pages {} : 0x{:016x}-0x{:016x} ({})\n", memory_type as u32, address, address + page_count * PAGE_SIZE - 1, allocate_type as u32);
+        //log!("allocate_pages {} : 0x{:016x}-0x{:016x} ({})\n", memory_type as u32, address, address + page_count * PAGE_SIZE - 1, allocate_type as u32);
         let dest = self.find_free_memory(allocate_type, page_count, address);
 
         if dest == None {
@@ -310,7 +330,7 @@ impl Allocator {
     }
 
     pub fn free_pages(&mut self, address: u64) -> Status {
-        log!("free_pages : 0x{:016x}\n", address);
+        //log!("free_pages : 0x{:016x}\n", address);
         let mut cur = self.first_allocation;
 
         while cur != None {
