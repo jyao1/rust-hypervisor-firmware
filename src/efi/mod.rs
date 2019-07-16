@@ -18,6 +18,7 @@ mod alloc;
 mod file;
 mod device_path;
 mod image;
+mod event;
 mod handle_database;
 mod variable;
 mod peloader;
@@ -56,6 +57,7 @@ use variable::Variable;
 use variable::MAX_VARIABLE_NAME;
 use variable::MAX_VARIABLE_DATA;
 use image::Image;
+use event::EventInfo;
 
 lazy_static! {
     pub static ref ALLOCATOR: Mutex<Allocator> = Mutex::new(Allocator::new());
@@ -71,6 +73,10 @@ lazy_static! {
 
 lazy_static! {
     pub static ref IMAGE: Mutex<Image> = Mutex::new(Image::new());
+}
+
+lazy_static! {
+    pub static ref EVENT: Mutex<EventInfo> = Mutex::new(EventInfo::new());
 }
 
 pub fn print_guid (
@@ -92,6 +98,71 @@ pub fn print_guid (
       guid_data.5[4],
       guid_data.5[5]
       );
+}
+
+pub fn get_char16_size (
+    message: *mut Char16,
+    max_size: usize
+    ) -> usize
+{
+    let mut i: usize = 0;
+    loop {
+        if (i >= max_size) {
+            break;
+        }
+        let output = (unsafe { *message.add(i) } & 0xffu16) as u8;
+        i += 1;
+        if output == 0 {
+            break;
+        }
+    }
+    return i
+}
+
+pub fn char16_to_char8 (
+    in_message: *mut Char16,
+    in_message_size: usize,
+    out_message: *mut u8,
+    out_message_size: usize,
+    ) -> usize
+{
+    let mut i: usize = 0;
+    loop {
+        if (i >= in_message_size) {
+            break;
+        }
+        if (i >= out_message_size) {
+            break;
+        }
+        let output = (unsafe { *in_message.add(i) } & 0xffu16) as u8;
+        unsafe { *out_message.add(i) = output; }
+        i += 1;
+        if output == 0 {
+            break;
+        }
+    }
+    return i;
+}
+
+pub fn print_char16 (
+    message: *mut Char16,
+    max_size: usize
+    ) -> usize
+{
+    let mut i: usize = 0;
+    loop {
+        if (i >= max_size) {
+            break;
+        }
+        let output = (unsafe { *message.add(i) } & 0xffu16) as u8;
+        i += 1;
+        if output == 0 {
+            break;
+        } else {
+            crate::log!("{}", output as char);
+        }
+    }
+    return i;
 }
 
 #[cfg(not(test))]
@@ -120,24 +191,7 @@ pub extern "win64" fn stdout_output_string(
     _: *mut SimpleTextOutputProtocol,
     message: *mut Char16,
 ) -> Status {
-    let mut string_end = false;
-
-    loop {
-        let mut output: [u8; 128] = [0; 128];
-        let mut i: usize = 0;
-        while i < output.len() {
-            output[i] = (unsafe { *message.add(i) } & 0xffu16) as u8;
-            if output[i] == 0 {
-                string_end = true;
-                break;
-            }
-            i += 1;
-        }
-        crate::log!("{}", unsafe { core::str::from_utf8_unchecked(&output) });
-        if string_end {
-            break;
-        }
-    }
+    print_char16 (message, core::usize::MAX);
     Status::SUCCESS
 }
 
@@ -147,26 +201,6 @@ pub extern "win64" fn stdout_test_string(
     message: *mut Char16,
 ) -> Status {
     crate::log!("EFI_STUB: stdout_test_string\n");
-
-    let mut string_end = false;
-
-    loop {
-        let mut output: [u8; 128] = [0; 128];
-        let mut i: usize = 0;
-        while i < output.len() {
-            output[i] = (unsafe { *message.add(i) } & 0xffu16) as u8;
-            if output[i] == 0 {
-                string_end = true;
-                break;
-            }
-            i += 1;
-        }
-        crate::log!("{}", unsafe { core::str::from_utf8_unchecked(&output) });
-        if string_end {
-            break;
-        }
-    }
-
     Status::SUCCESS
 }
 
@@ -293,27 +327,25 @@ pub extern "win64" fn get_variable(
 ) -> Status {
     crate::log!("EFI_STUB: get_variable ");
 
-    let mut string_end = false;
-    let mut name_buffer: [u8; MAX_VARIABLE_NAME] = [0; MAX_VARIABLE_NAME];
-    let mut name_len: usize = 0;
-    while name_len < MAX_VARIABLE_NAME {
-      name_buffer[name_len] = (unsafe { *var_name.add(name_len) } & 0xffu16) as u8;
-      crate::log!("{}", name_buffer[name_len] as char);
-      if name_buffer[name_len] == 0 {
-        string_end = true;
-        break;
-      }
-      name_len += 1;
-    }
+    let var_name_size = get_char16_size (var_name, core::usize::MAX);
+    print_char16 (var_name, var_name_size);
     crate::log!(" ");
     print_guid (var_guid);
     crate::log!("\n");
-    let guid_buffer : *mut [u8; 16] = unsafe { core::mem::transmute::<*mut Guid, *mut [u8; 16]>(var_guid) };
 
-    if !string_end {
+    if var_name_size > MAX_VARIABLE_NAME {
       crate::log!("name too long\n");
       return Status::UNSUPPORTED;
     }
+
+    let mut name_buffer: [u8; MAX_VARIABLE_NAME] = [0; MAX_VARIABLE_NAME];
+    char16_to_char8 (
+        var_name,
+        var_name_size,
+        &mut name_buffer as *mut [u8; MAX_VARIABLE_NAME] as *mut u8,
+        MAX_VARIABLE_NAME);
+
+    let guid_buffer : *mut [u8; 16] = unsafe { core::mem::transmute::<*mut Guid, *mut [u8; 16]>(var_guid) };
 
     let (status, var_attributes, var_size, var_data) = VARIABLE.lock().get_variable(
                      &mut name_buffer as *mut [u8; MAX_VARIABLE_NAME],
@@ -358,31 +390,27 @@ pub extern "win64" fn set_variable(
     size: usize,
     data: *mut c_void,
 ) -> Status {
-    crate::log!("EFI_STUB: set_variable");
-    
-    let mut string_end = false;
-    let mut name_buffer: [u8; MAX_VARIABLE_NAME] = [0; MAX_VARIABLE_NAME];
-    let mut name_len: usize = 0;
-    while name_len < MAX_VARIABLE_NAME {
-      name_buffer[name_len] = (unsafe { *var_name.add(name_len) } & 0xffu16) as u8;
-      crate::log!("{}", name_buffer[name_len] as char);
-      if name_buffer[name_len] == 0 {
-        string_end = true;
-        break;
-      }
-      name_len += 1;
-    }
+    crate::log!("EFI_STUB: set_variable ");
 
-    let guid_data = unsafe { (*var_guid).as_fields() };
+    let var_name_size = get_char16_size (var_name, core::usize::MAX);
+    print_char16 (var_name, var_name_size);
     crate::log!(" ");
     print_guid (var_guid);
     crate::log!("\n");
-    let guid_buffer : *mut [u8; 16] = unsafe { core::mem::transmute::<*mut Guid, *mut [u8; 16]>(var_guid) };
 
-    if !string_end {
+    if var_name_size > MAX_VARIABLE_NAME {
       crate::log!("name too long\n");
       return Status::UNSUPPORTED;
     }
+
+    let mut name_buffer: [u8; MAX_VARIABLE_NAME] = [0; MAX_VARIABLE_NAME];
+    char16_to_char8 (
+        var_name,
+        var_name_size,
+        &mut name_buffer as *mut [u8; MAX_VARIABLE_NAME] as *mut u8,
+        MAX_VARIABLE_NAME);
+
+    let guid_buffer : *mut [u8; 16] = unsafe { core::mem::transmute::<*mut Guid, *mut [u8; 16]>(var_guid) };
 
     if size > MAX_VARIABLE_DATA {
       crate::log!("data too long\n");
@@ -544,14 +572,27 @@ pub extern "win64" fn free_pool(ptr: *mut c_void) -> Status {
 
 #[cfg(not(test))]
 pub extern "win64" fn create_event(
-    _: u32,
-    _: Tpl,
-    _: EventNotify,
-    _: *mut c_void,
-    _: *mut Event,
+    r#type: u32,
+    notify_tpl: Tpl,
+    notify_function: EventNotify,
+    notify_context: *mut c_void,
+    event: *mut Event,
 ) -> Status {
-    crate::log!("EFI_STUB: create_event\n");
-    Status::UNSUPPORTED
+    crate::log!("EFI_STUB: create_event - type:0x{:x} tpl:0x{:x}\n", r#type, notify_tpl as usize);
+
+    let (status, new_event) = EVENT.lock().create_event(
+            r#type,
+            notify_tpl,
+            notify_function,
+            notify_context
+            );
+    log!("status - {:?}\n", status);
+    if status == Status::SUCCESS {
+        unsafe {
+            *event = new_event;
+        }
+    }
+    status
 }
 
 #[cfg(not(test))]
