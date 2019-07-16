@@ -21,11 +21,14 @@ mod image;
 mod event;
 mod handle_database;
 mod variable;
+mod conout;
 mod peloader;
 mod init;
 
 use lazy_static::lazy_static;
 use spin::Mutex;
+use core::fmt;
+use cpuio::Port;
 
 use r_efi::efi;
 use r_efi::efi::{
@@ -59,6 +62,7 @@ use variable::MAX_VARIABLE_NAME;
 use variable::MAX_VARIABLE_DATA;
 use image::Image;
 use event::EventInfo;
+use conout::ConOut;
 
 #[cfg(not(test))]
 #[repr(C,packed)]
@@ -85,6 +89,10 @@ lazy_static! {
 
 lazy_static! {
     pub static ref EVENT: Mutex<EventInfo> = Mutex::new(EventInfo::new());
+}
+
+lazy_static! {
+    pub static ref CONOUT: Mutex<ConOut> = Mutex::new(ConOut::new());
 }
 
 pub fn print_guid (
@@ -199,7 +207,18 @@ pub extern "win64" fn stdout_output_string(
     _: *mut SimpleTextOutputProtocol,
     message: *mut Char16,
 ) -> Status {
-    print_char16 (message, core::usize::MAX);
+
+    let mut i: usize = 0;
+    loop {
+        let output = (unsafe { *message.add(i) } & 0xffu16) as u8;
+        i += 1;
+        if output == 0 {
+            break;
+        } else {
+            CONOUT.lock().write_byte(output);
+        }
+    }
+
     Status::SUCCESS
 }
 
@@ -220,57 +239,77 @@ pub extern "win64" fn stdout_query_mode(
     raws: *mut usize,
 ) -> Status {
     crate::log!("EFI_STUB: stdout_query_mode - {}\n", mode_number);
-    if mode_number != 0 && mode_number != 1 {
-      return Status::UNSUPPORTED;
-    }
     if columns == core::ptr::null_mut() || raws == core::ptr::null_mut() {
       return Status::INVALID_PARAMETER;
     }
-    if mode_number == 0 {
-      unsafe {
+    match mode_number {
+      0 => {
+        unsafe {
         *columns = 80;
         *raws = 25;
-      }
-    }
-    if mode_number == 1 {
-      unsafe {
+        }
+      },
+      1 => {
+        unsafe {
         *columns = 80;
         *raws = 50;
-      }
+        }
+      },
+      _ => { return Status::UNSUPPORTED; },
     }
     Status::SUCCESS
 }
 
 #[cfg(not(test))]
-pub extern "win64" fn stdout_set_mode(_: *mut SimpleTextOutputProtocol, _: usize) -> Status {
+pub extern "win64" fn stdout_set_mode(_: *mut SimpleTextOutputProtocol, mode_number: usize) -> Status {
     crate::log!("EFI_STUB: stdout_set_mode\n");
+    match mode_number {
+      0 => {
+        unsafe {
+          STDOUT_MODE.mode = 0;
+          STDOUT_MODE.cursor_column = 80;
+          STDOUT_MODE.cursor_row = 25;
+        }
+      },
+      1 => {
+        unsafe {
+          STDOUT_MODE.mode = 1;
+          STDOUT_MODE.cursor_column = 80;
+          STDOUT_MODE.cursor_row = 50;
+        }
+      },
+      _ => { return Status::UNSUPPORTED; },
+    }
     Status::SUCCESS
 }
 
 #[cfg(not(test))]
-pub extern "win64" fn stdout_set_attribute(_: *mut SimpleTextOutputProtocol, _: usize) -> Status {
-    crate::log!("EFI_STUB: stdout_set_attribute\n");
+pub extern "win64" fn stdout_set_attribute(_: *mut SimpleTextOutputProtocol, attribute: usize) -> Status {
+    crate::log!("EFI_STUB: stdout_set_attribute 0x{:x}\n", attribute);
+    CONOUT.lock().set_attribute(attribute);
     Status::SUCCESS
 }
 
 #[cfg(not(test))]
 pub extern "win64" fn stdout_clear_screen(_: *mut SimpleTextOutputProtocol) -> Status {
     crate::log!("EFI_STUB: stdout_clear_screen\n");
+    CONOUT.lock().clear_screen();
     Status::SUCCESS
 }
 
 #[cfg(not(test))]
 pub extern "win64" fn stdout_set_cursor_position(
     _: *mut SimpleTextOutputProtocol,
-    _: usize,
-    _: usize,
+    column: usize,
+    row: usize,
 ) -> Status {
-    crate::log!("EFI_STUB: stdout_set_cursor_position\n");
+    crate::log!("EFI_STUB: stdout_set_cursor_position {} {}\n", column, row);
+    CONOUT.lock().set_cursor_position(column, row);
     Status::SUCCESS
 }
 
 #[cfg(not(test))]
-pub extern "win64" fn stdout_enable_cursor(_: *mut SimpleTextOutputProtocol, _: Boolean) -> Status {
+pub extern "win64" fn stdout_enable_cursor(_: *mut SimpleTextOutputProtocol, visible: Boolean) -> Status {
     crate::log!("EFI_STUB: stdout_enable_cursor\n");
     Status::SUCCESS
 }
@@ -1216,6 +1255,24 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
 
     crate::efi::init::initialize_memory(hob);
     crate::efi::init::initialize_variable ();
+
+    // test begin
+
+  if false {
+    let test_string : [u8 ; 6] = ['t' as u8, 'e' as u8, 's' as u8, 't' as u8, '1' as u8, '\n' as u8] ;
+    for i in 0 .. 6 {
+      CONOUT.lock().write_byte(test_string[i]);
+    }
+    let test_string : [u8 ; 6] = ['t' as u8, 'e' as u8, 's' as u8, 't' as u8, '2' as u8, '\r' as u8] ;
+    for i in 0 .. 6 {
+      CONOUT.lock().write_byte(test_string[i]);
+    }
+    let test_string : [u8 ; 6] = ['t' as u8, 'e' as u8, 's' as u8, 't' as u8, '3' as u8, '\n' as u8] ;
+    for i in 0 .. 6 {
+      CONOUT.lock().write_byte(test_string[i]);
+    }
+  }
+    // test end
 
     let (image, size) = crate::efi::init::find_loader (hob);
 

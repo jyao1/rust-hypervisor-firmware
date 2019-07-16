@@ -60,8 +60,8 @@ macro_rules! log {
 
 #[cfg(not(test))]
 pub fn _log(args: fmt::Arguments) {
-    use core::fmt::Write;
-    LOGGER.lock().write_fmt(args).unwrap();
+    //use core::fmt::Write;
+    //LOGGER.lock().write_fmt(args).unwrap();
 }
 
 #[cfg(test)]
