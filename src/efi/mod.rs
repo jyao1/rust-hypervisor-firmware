@@ -41,6 +41,7 @@ use r_efi::protocols::simple_text_output::Protocol as SimpleTextOutputProtocol;
 //use r_efi::protocols::loaded_image::Protocol as LoadedImageProtocol;
 use r_efi::protocols::device_path::Protocol as DevicePathProtocol;
 use crate::efi::device_path::MemoryMaped as MemoryMappedDevicePathProtocol;
+use r_efi::protocols::device_path::End as EndDevicePath;
 
 use r_efi::{eficall, eficall_abi};
 
@@ -58,6 +59,13 @@ use variable::MAX_VARIABLE_NAME;
 use variable::MAX_VARIABLE_DATA;
 use image::Image;
 use event::EventInfo;
+
+#[cfg(not(test))]
+#[repr(C,packed)]
+pub struct FullMemoryMappedDevicePath {
+  memory_map : MemoryMappedDevicePathProtocol,
+  end: EndDevicePath,
+}
 
 lazy_static! {
     pub static ref ALLOCATOR: Mutex<Allocator> = Mutex::new(Allocator::new());
@@ -687,19 +695,6 @@ pub extern "win64" fn handle_protocol(
     print_guid (guid);
     crate::log!("\n");
 
-    if unsafe { *guid } == r_efi::protocols::loaded_image::PROTOCOL_GUID {
-        unsafe {
-            *out = handle;
-        }
-        return Status::SUCCESS;
-    }
-    if unsafe { *guid } == r_efi::protocols::simple_file_system::PROTOCOL_GUID {
-        unsafe {
-            *out = handle;
-        }
-        return Status::SUCCESS;
-    }
-
     let (status, interface) = HANDLE_DATABASE.lock().handle_protocol(handle, guid);
     log!("status - {:?}\n", status);
     if status == Status::SUCCESS {
@@ -785,6 +780,8 @@ pub extern "win64" fn load_image(
     crate::log!("EFI_STUB: load_image\n");
 
     let (status, new_image_handle) = IMAGE.lock().load_image(
+        parent_image_handle,
+        device_path,
         source_buffer,
         source_size,
     );
@@ -880,12 +877,6 @@ pub extern "win64" fn open_protocol(
     controller_handle: Handle,
     attributes: u32,
 ) -> Status {
-    if unsafe { *guid } == r_efi::protocols::loaded_image::PROTOCOL_GUID {
-        unsafe {
-            *out_interface = handle;
-        }
-        return Status::SUCCESS;
-    }
     if guid == core::ptr::null_mut() {
         crate::log!("EFI_STUB: open_protocol - NULL\n");
         return Status::INVALID_PARAMETER;
@@ -912,8 +903,8 @@ pub extern "win64" fn open_protocol(
 
 #[cfg(not(test))]
 pub extern "win64" fn close_protocol(_: Handle, _: *mut Guid, _: Handle, _: Handle) -> Status {
-    crate::log!("EFI_STUB: close_protocol - UNSUPPORTED\n");
-    Status::UNSUPPORTED
+    crate::log!("EFI_STUB: close_protocol\n");
+    Status::SUCCESS
 }
 
 #[cfg(not(test))]
@@ -1075,30 +1066,6 @@ const STDOUT_HANDLE: Handle = 1 as Handle;
 #[cfg(not(test))]
 const STDERR_HANDLE: Handle = 2 as Handle;
 
-// HACK: Until r-util/r-efi#11 gets merged
-#[cfg(not(test))]
-#[repr(C)]
-pub struct LoadedImageProtocol {
-    pub revision: u32,
-    pub parent_handle: Handle,
-    pub system_table: *mut efi::SystemTable,
-
-    pub device_handle: Handle,
-    pub file_path: *mut r_efi::protocols::device_path::Protocol,
-    pub reserved: *mut core::ffi::c_void,
-
-    pub load_options_size: u32,
-    pub load_options: *mut core::ffi::c_void,
-
-    pub image_base: *mut core::ffi::c_void,
-    pub image_size: u64,
-    pub image_code_type: efi::MemoryType,
-    pub image_data_type: efi::MemoryType,
-    pub unload: eficall! {fn(
-        Handle,
-    ) -> Status},
-}
-
 pub static mut STDIN : SimpleTextInputProtocol = SimpleTextInputProtocol {
           reset: stdin_reset,
           read_key_stroke: stdin_read_key_stroke,
@@ -1252,22 +1219,31 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
 
     let (image, size) = crate::efi::init::find_loader (hob);
 
-    let mut image_path = MemoryMappedDevicePathProtocol {
+    let mut image_path = FullMemoryMappedDevicePath {
+        memory_map: MemoryMappedDevicePathProtocol {
             header: DevicePathProtocol {
-                r#type: r_efi::protocols::device_path::TYPE_HARDWARE,
+            r#type: r_efi::protocols::device_path::TYPE_HARDWARE,
             sub_type: r_efi::protocols::device_path::Hardware::SUBTYPE_MMAP,
-            length: [0, 24],
+            length: [24, 0],
+          },
+          memory_type: MemoryType::BootServicesCode,
+          start_address: image as u64,
+          end_address: image as u64 + size as u64 - 1,
         },
-        memory_type: MemoryType::BootServicesCode,
-        start_address: image as u64,
-        end_address: image as u64 + size as u64 - 1,
+        end: r_efi::protocols::device_path::End {
+            header: DevicePathProtocol {
+            r#type: r_efi::protocols::device_path::TYPE_END,
+            sub_type: r_efi::protocols::device_path::End::SUBTYPE_ENTIRE,
+            length: [24, 0],
+          },
+        },
     };
 
     let mut image_handle : Handle = core::ptr::null_mut();
     let status = load_image (
                    Boolean::FALSE,
                    core::ptr::null_mut(), // parent handle
-                   &mut image_path.header as *mut DevicePathProtocol as *mut c_void,
+                   &mut image_path.memory_map.header as *mut DevicePathProtocol as *mut c_void,
                    image as *mut c_void,
                    size,
                    &mut image_handle
