@@ -110,11 +110,10 @@ impl HandleDatabase {
         (Status::SUCCESS, cur_handle)
     }
 
-    pub fn locate_handle_buffer (
+    fn locate_handle_count (
         &mut self,
         guid : *mut Guid,
-    ) -> (Status, usize, *mut Handle) {
-
+    ) -> (Status, usize) {
         let mut count = 0usize;
         for index in 0 .. self.protocol_handle_count {
           let protocol_handle = &mut self.protocol_handle[index] as *mut ProtocolHandle;
@@ -125,9 +124,41 @@ impl HandleDatabase {
         }
 
         if count == 0 {
-          return (Status::NOT_FOUND, 0, core::ptr::null_mut());
+          return (Status::NOT_FOUND, 0);
         }
+        (Status::SUCCESS, count)
+    }
 
+    fn locate_handle_copy (
+        &mut self,
+        guid : *mut Guid,
+        handle_buffer : *mut c_void,
+        handle_buffer_size : usize
+    ) {
+        let address = handle_buffer as usize;
+        let handle_buffer = address as *mut [Handle; MAX_HANDLE_STRUCT];
+        
+        let mut count = 0usize;
+        for index in 0 .. self.protocol_handle_count {
+          let protocol_handle = &mut self.protocol_handle[index] as *mut ProtocolHandle;
+          let (status, protocol_struct) = self.get_protocol (protocol_handle, guid);
+          if status == Status::SUCCESS {
+            assert!(handle_buffer_size >= (count + 1) * core::mem::size_of::<Handle>());
+            unsafe {(*handle_buffer)[count] = protocol_handle as Handle;}
+            count = count + 1;
+          }
+        }
+    }
+
+    pub fn locate_handle_buffer (
+        &mut self,
+        guid : *mut Guid,
+    ) -> (Status, usize, *mut Handle) {
+        let (status, count) = self.locate_handle_count (guid);
+        if status != Status::SUCCESS {
+          return (status, 0, core::ptr::null_mut())
+        }
+        
         let mut handle_buffer_address: *mut c_void = core::ptr::null_mut();
         let status = crate::efi::allocate_pool (
                        MemoryType::BootServicesData,
@@ -138,20 +169,30 @@ impl HandleDatabase {
           return (status, 0, core::ptr::null_mut())
         }
 
-        let address = handle_buffer_address as usize;
-        let handle_buffer = address as *mut [Handle; MAX_HANDLE_STRUCT];
-        
-        let mut count = 0usize;
-        for index in 0 .. self.protocol_handle_count {
-          let protocol_handle = &mut self.protocol_handle[index] as *mut ProtocolHandle;
-          let (status, protocol_struct) = self.get_protocol (protocol_handle, guid);
-          if status == Status::SUCCESS {
-            unsafe {(*handle_buffer)[count] = protocol_handle as Handle;}
-            count = count + 1;
-          }
-        }
+        self.locate_handle_copy (guid, handle_buffer_address, count * core::mem::size_of::<Handle>());
 
         (Status::SUCCESS, count, handle_buffer_address as *mut Handle)
+    }
+
+    pub fn locate_handle (
+        &mut self,
+        guid : *mut Guid,
+        buffer_size: usize,
+        buffer: *mut Handle,
+    ) -> (Status, usize) {
+        let (status, count) = self.locate_handle_count (guid);
+        if status != Status::SUCCESS {
+          return (status, 0)
+        }
+        let real_size = count * core::mem::size_of::<Handle>();
+
+        if buffer_size < real_size {
+          return (Status::BUFFER_TOO_SMALL, real_size)
+        }
+
+        self.locate_handle_copy (guid, buffer as *mut c_void, real_size);
+
+        (Status::SUCCESS, real_size)
     }
 
     pub fn handle_protocol (
@@ -170,6 +211,23 @@ impl HandleDatabase {
         }
 
         unsafe { (Status::SUCCESS, (*protocol_struct).interface as *mut c_void) }
+    }
+
+    pub fn locate_protocol (
+        &mut self,
+        guid: *mut Guid,
+        ) -> (Status, *mut c_void) {
+
+        for index in 0 .. self.protocol_handle_count {
+          let protocol_handle = &mut self.protocol_handle[index] as *mut ProtocolHandle;
+          let (status, protocol_struct) = self.get_protocol (protocol_handle, guid);
+          if status == Status::SUCCESS {
+            let interface : *mut c_void = unsafe { (*protocol_struct).interface } as *mut c_void;
+            return (Status::SUCCESS, interface);
+          }
+        }
+
+        (Status::NOT_FOUND, core::ptr::null_mut())
     }
 
     fn get_new_protocol (
