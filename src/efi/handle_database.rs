@@ -31,10 +31,19 @@ use crate::efi::peloader::*;
 const HANDLE_SIGNATURE: u32 = 0x4C444849; // 'I','H','D','L'
 
 #[repr(C)]
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 struct ProtocolStruct {
-    guid : usize,
+    guid : Guid,
     interface : usize,
+}
+
+impl Default for ProtocolStruct {
+    fn default() -> ProtocolStruct {
+      ProtocolStruct {
+        guid: Guid::from_fields(0x00000000, 0x0000, 0x0000, 0x00, 0x00, &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+        interface: 0,
+      }
+    }
 }
 
 const MAX_PROTOCOL_STRUCT: usize = 16;
@@ -95,7 +104,7 @@ impl HandleDatabase {
         }
 
         let protocol_struct = unsafe {transmute::<*mut ProtocolStruct, &mut ProtocolStruct>(cur_protocol_struct)};
-        protocol_struct.guid = guid as usize;
+        protocol_struct.guid = unsafe {*guid};
         protocol_struct.interface = interface as usize;
 
         (Status::SUCCESS, cur_handle)
@@ -174,7 +183,7 @@ impl HandleDatabase {
           let protocol_struct = &mut (*protocol_handle).protocol_struct[(*protocol_handle).protocol_count];
           (*protocol_handle).protocol_count = (*protocol_handle).protocol_count + 1;
 
-          protocol_struct.guid = 0;
+          protocol_struct.guid = Guid::from_fields(0x00000000, 0x0000, 0x0000, 0x00, 0x00, &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
           protocol_struct.interface = 0;
 
           (Status::SUCCESS, protocol_struct as *mut ProtocolStruct)
@@ -189,11 +198,8 @@ impl HandleDatabase {
         unsafe {
           assert!((*protocol_handle).signature == HANDLE_SIGNATURE);
           for index in 0 .. (*protocol_handle).protocol_count {
-            let guid_addr = (*protocol_handle).protocol_struct[index].guid;
-            let guid_ptr : *mut Guid = guid_addr as *mut c_void as *mut Guid;
-            let guid1_data = (*guid).as_fields();
-            let guid2_data = (*guid_ptr).as_fields();
-            if guid1_data == guid2_data {
+            let mut guid_data = (*protocol_handle).protocol_struct[index].guid;
+            if *guid == guid_data {
               return (Status::SUCCESS, &mut (*protocol_handle).protocol_struct[index]);
             }
           }

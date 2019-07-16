@@ -73,6 +73,27 @@ lazy_static! {
     pub static ref IMAGE: Mutex<Image> = Mutex::new(Image::new());
 }
 
+pub fn print_guid (
+    guid: *mut Guid,
+    )
+{
+    let guid_data = unsafe { (*guid).as_fields() };
+    crate::log!(
+      "{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+      guid_data.0,
+      guid_data.1,
+      guid_data.2,
+      guid_data.3,
+      guid_data.4,
+      guid_data.5[0],
+      guid_data.5[1],
+      guid_data.5[2],
+      guid_data.5[3],
+      guid_data.5[4],
+      guid_data.5[5]
+      );
+}
+
 #[cfg(not(test))]
 pub extern "win64" fn stdin_reset(_: *mut SimpleTextInputProtocol, _: Boolean) -> Status {
     crate::log!("EFI_STUB: stdin_reset\n");
@@ -123,21 +144,59 @@ pub extern "win64" fn stdout_output_string(
 #[cfg(not(test))]
 pub extern "win64" fn stdout_test_string(
     _: *mut SimpleTextOutputProtocol,
-    _: *mut Char16,
+    message: *mut Char16,
 ) -> Status {
     crate::log!("EFI_STUB: stdout_test_string\n");
-    Status::UNSUPPORTED
+
+    let mut string_end = false;
+
+    loop {
+        let mut output: [u8; 128] = [0; 128];
+        let mut i: usize = 0;
+        while i < output.len() {
+            output[i] = (unsafe { *message.add(i) } & 0xffu16) as u8;
+            if output[i] == 0 {
+                string_end = true;
+                break;
+            }
+            i += 1;
+        }
+        crate::log!("{}", unsafe { core::str::from_utf8_unchecked(&output) });
+        if string_end {
+            break;
+        }
+    }
+
+    Status::SUCCESS
 }
 
 #[cfg(not(test))]
 pub extern "win64" fn stdout_query_mode(
     _: *mut SimpleTextOutputProtocol,
-    _: usize,
-    _: *mut usize,
-    _: *mut usize,
+    mode_number: usize,
+    columns: *mut usize,
+    raws: *mut usize,
 ) -> Status {
-    crate::log!("EFI_STUB: stdout_test_string\n");
-    Status::UNSUPPORTED
+    crate::log!("EFI_STUB: stdout_query_mode - {}\n", mode_number);
+    if mode_number != 0 && mode_number != 1 {
+      return Status::UNSUPPORTED;
+    }
+    if columns == core::ptr::null_mut() || raws == core::ptr::null_mut() {
+      return Status::INVALID_PARAMETER;
+    }
+    if mode_number == 0 {
+      unsafe {
+        *columns = 80;
+        *raws = 25;
+      }
+    }
+    if mode_number == 1 {
+      unsafe {
+        *columns = 80;
+        *raws = 50;
+      }
+    }
+    Status::SUCCESS
 }
 
 #[cfg(not(test))]
@@ -155,7 +214,7 @@ pub extern "win64" fn stdout_set_attribute(_: *mut SimpleTextOutputProtocol, _: 
 #[cfg(not(test))]
 pub extern "win64" fn stdout_clear_screen(_: *mut SimpleTextOutputProtocol) -> Status {
     crate::log!("EFI_STUB: stdout_clear_screen\n");
-    Status::UNSUPPORTED
+    Status::SUCCESS
 }
 
 #[cfg(not(test))]
@@ -171,7 +230,7 @@ pub extern "win64" fn stdout_set_cursor_position(
 #[cfg(not(test))]
 pub extern "win64" fn stdout_enable_cursor(_: *mut SimpleTextOutputProtocol, _: Boolean) -> Status {
     crate::log!("EFI_STUB: stdout_enable_cursor\n");
-    Status::UNSUPPORTED
+    Status::SUCCESS
 }
 
 #[cfg(not(test))]
@@ -246,25 +305,10 @@ pub extern "win64" fn get_variable(
       }
       name_len += 1;
     }
-
-    let guid_data = unsafe { (*var_guid).as_fields() };
-    crate::log!(
-      " {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-      guid_data.0,
-      guid_data.1,
-      guid_data.2,
-      guid_data.3,
-      guid_data.4,
-      guid_data.5[0],
-      guid_data.5[1],
-      guid_data.5[2],
-      guid_data.5[3],
-      guid_data.5[4],
-      guid_data.5[5]
-      );
-    let guid_buffer : *mut [u8; 16] = unsafe { core::mem::transmute::<*mut Guid, *mut [u8; 16]>(var_guid) };
-
+    crate::log!(" ");
+    print_guid (var_guid);
     crate::log!("\n");
+    let guid_buffer : *mut [u8; 16] = unsafe { core::mem::transmute::<*mut Guid, *mut [u8; 16]>(var_guid) };
 
     if !string_end {
       crate::log!("name too long\n");
@@ -330,23 +374,10 @@ pub extern "win64" fn set_variable(
     }
 
     let guid_data = unsafe { (*var_guid).as_fields() };
-    crate::log!(
-      " {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-      guid_data.0,
-      guid_data.1,
-      guid_data.2,
-      guid_data.3,
-      guid_data.4,
-      guid_data.5[0],
-      guid_data.5[1],
-      guid_data.5[2],
-      guid_data.5[3],
-      guid_data.5[4],
-      guid_data.5[5]
-      );
-    let guid_buffer : *mut [u8; 16] = unsafe { core::mem::transmute::<*mut Guid, *mut [u8; 16]>(var_guid) };
-
+    crate::log!(" ");
+    print_guid (var_guid);
     crate::log!("\n");
+    let guid_buffer : *mut [u8; 16] = unsafe { core::mem::transmute::<*mut Guid, *mut [u8; 16]>(var_guid) };
 
     if !string_end {
       crate::log!("name too long\n");
@@ -440,6 +471,8 @@ pub extern "win64" fn allocate_pages(
         unsafe {
             *address = new_address;
         }
+    } else {
+      log!("allocate pages status - {:?}\n", status);
     }
     status
 }
@@ -497,6 +530,8 @@ pub extern "win64" fn allocate_pool(
         unsafe {
             *address = new_address as *mut c_void;
         }
+    } else {
+      log!("allocate pool status - {:?}\n", status);
     }
 
     status
@@ -556,30 +591,16 @@ pub extern "win64" fn install_protocol_interface(
     interface_type: InterfaceType,
     interface: *mut c_void,
 ) -> Status {
-    let guid_data = unsafe { (*guid).as_fields() };
-    crate::log!(
-      "EFI_STUB: install_protocol_interface - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
-      guid_data.0,
-      guid_data.1,
-      guid_data.2,
-      guid_data.3,
-      guid_data.4,
-      guid_data.5[0],
-      guid_data.5[1],
-      guid_data.5[2],
-      guid_data.5[3],
-      guid_data.5[4],
-      guid_data.5[5]
-      );
+    crate::log!("EFI_STUB: install_protocol_interface - ");
+    print_guid (guid);
+    crate::log!("\n");
 
-    let (status, new_handle) =
-        HANDLE_DATABASE
-            .lock()
-            .install_protocol(
+    let (status, new_handle) = HANDLE_DATABASE.lock().install_protocol(
                 unsafe {*handle},
                 guid,
                 interface,
             );
+    log!("status - {:?}\n", status);
     if status == Status::SUCCESS {
         unsafe {
             *handle = new_handle;
@@ -619,21 +640,10 @@ pub extern "win64" fn handle_protocol(
         crate::log!("EFI_STUB: handle_protocol - NULL\n");
         return Status::INVALID_PARAMETER;
     }
-    let guid_data = unsafe { (*guid).as_fields() };
-    crate::log!(
-      "EFI_STUB: handle_protocol - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
-      guid_data.0,
-      guid_data.1,
-      guid_data.2,
-      guid_data.3,
-      guid_data.4,
-      guid_data.5[0],
-      guid_data.5[1],
-      guid_data.5[2],
-      guid_data.5[3],
-      guid_data.5[4],
-      guid_data.5[5]
-      );
+
+    crate::log!("EFI_STUB: handle_protocol - ");
+    print_guid (guid);
+    crate::log!("\n");
 
     if unsafe { *guid } == r_efi::protocols::loaded_image::PROTOCOL_GUID {
         unsafe {
@@ -648,9 +658,14 @@ pub extern "win64" fn handle_protocol(
         return Status::SUCCESS;
     }
 
-    crate::log!("EFI_STUB: unsupported handle_protocol\n");
-
-    Status::UNSUPPORTED
+    let (status, interface) = HANDLE_DATABASE.lock().handle_protocol(handle, guid);
+    log!("status - {:?}\n", status);
+    if status == Status::SUCCESS {
+        unsafe {
+            *out = interface;
+        }
+    }
+    status
 }
 
 #[cfg(not(test))]
@@ -675,21 +690,10 @@ pub extern "win64" fn locate_handle(
         crate::log!("EFI_STUB: locate_handle - NULL\n");
         return Status::INVALID_PARAMETER;
     }
-    let guid_data = unsafe { (*guid).as_fields() };
-    crate::log!(
-      "EFI_STUB: locate_handle - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
-      guid_data.0,
-      guid_data.1,
-      guid_data.2,
-      guid_data.3,
-      guid_data.4,
-      guid_data.5[0],
-      guid_data.5[1],
-      guid_data.5[2],
-      guid_data.5[3],
-      guid_data.5[4],
-      guid_data.5[5]
-      );
+
+    crate::log!("EFI_STUB: locate_handle - ");
+    print_guid (guid);
+    crate::log!("\n");
 
     Status::UNSUPPORTED
 }
@@ -778,13 +782,13 @@ pub extern "win64" fn get_next_monotonic_count(_: *mut u64) -> Status {
 #[cfg(not(test))]
 pub extern "win64" fn stall(_: usize) -> Status {
     crate::log!("EFI_STUB: stall\n");
-    Status::UNSUPPORTED
+    Status::SUCCESS
 }
 
 #[cfg(not(test))]
 pub extern "win64" fn set_watchdog_timer(_: usize, _: u64, _: usize, _: *mut Char16) -> Status {
     crate::log!("EFI_STUB: set_watchdog_timer\n");
-    Status::UNSUPPORTED
+    Status::SUCCESS
 }
 
 #[cfg(not(test))]
@@ -823,21 +827,10 @@ pub extern "win64" fn open_protocol(
         crate::log!("EFI_STUB: open_protocol - NULL\n");
         return Status::INVALID_PARAMETER;
     }
-    let guid_data = unsafe { (*guid).as_fields() };
-    crate::log!(
-      "EFI_STUB: open_protocol - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
-      guid_data.0,
-      guid_data.1,
-      guid_data.2,
-      guid_data.3,
-      guid_data.4,
-      guid_data.5[0],
-      guid_data.5[1],
-      guid_data.5[2],
-      guid_data.5[3],
-      guid_data.5[4],
-      guid_data.5[5]
-      );
+
+    crate::log!("EFI_STUB: open_protocol - ");
+    print_guid (guid);
+    crate::log!("\n");
 
     log!("attributes - {}\n", attributes);
 
@@ -893,21 +886,10 @@ pub extern "win64" fn locate_handle_buffer(
         crate::log!("EFI_STUB: locate_handle_buffer - NULL\n");
         return Status::INVALID_PARAMETER;
     }
-    let guid_data = unsafe { (*guid).as_fields() };
-    crate::log!(
-      "EFI_STUB: locate_handle_buffer - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
-      guid_data.0,
-      guid_data.1,
-      guid_data.2,
-      guid_data.3,
-      guid_data.4,
-      guid_data.5[0],
-      guid_data.5[1],
-      guid_data.5[2],
-      guid_data.5[3],
-      guid_data.5[4],
-      guid_data.5[5]
-      );
+
+    crate::log!("EFI_STUB: locate_handle_buffer - ");
+    print_guid (guid);
+    crate::log!("\n");
 
     log!("locate_search_type - {}\n", locate_search_type as u32);
     log!("search_key - {:p}\n", search_key);
@@ -926,6 +908,7 @@ pub extern "win64" fn locate_handle_buffer(
             *buffer = handle_buffer as *mut Handle;
         }
     }
+    log!("status - {:?}\n", status);
     status
 }
 
@@ -935,21 +918,10 @@ pub extern "win64" fn locate_protocol(guid: *mut Guid, _: *mut c_void, _: *mut *
         crate::log!("EFI_STUB: locate_protocol - NULL\n");
         return Status::INVALID_PARAMETER;
     }
-    let guid_data = unsafe { (*guid).as_fields() };
-    crate::log!(
-      "EFI_STUB: locate_protocol - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
-      guid_data.0,
-      guid_data.1,
-      guid_data.2,
-      guid_data.3,
-      guid_data.4,
-      guid_data.5[0],
-      guid_data.5[1],
-      guid_data.5[2],
-      guid_data.5[3],
-      guid_data.5[4],
-      guid_data.5[5]
-      );
+
+    crate::log!("EFI_STUB: locate_protocol - ");
+    print_guid (guid);
+    crate::log!("\n");
 
     Status::UNSUPPORTED
 }
@@ -960,22 +932,13 @@ pub extern "win64" fn install_multiple_protocol_interfaces(
     guid: *mut c_void,
     interface: *mut c_void,
 ) -> Status {
+
     let guid_ptr = guid as *mut Guid;
-    let guid_data = unsafe { (*guid_ptr).as_fields() };
-    crate::log!(
-      "EFI_STUB: install_multiple_protocol_interfaces - {:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n",
-      guid_data.0,
-      guid_data.1,
-      guid_data.2,
-      guid_data.3,
-      guid_data.4,
-      guid_data.5[0],
-      guid_data.5[1],
-      guid_data.5[2],
-      guid_data.5[3],
-      guid_data.5[4],
-      guid_data.5[5]
-      );
+
+    crate::log!("EFI_STUB: install_multiple_protocol_interfaces - ");
+    print_guid (guid_ptr);
+    crate::log!("\n");
+
     Status::UNSUPPORTED
 }
 

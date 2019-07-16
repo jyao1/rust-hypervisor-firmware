@@ -27,10 +27,14 @@ use core::mem::size_of;
 
 use crate::efi::peloader::*;
 
-const HANDLE_SIGNATURE: u32 = 0x49444849; // 'I','H','D','I'
+pub const IMAGE_INFO_GUID: Guid = Guid::from_fields(
+    0xdecf2644, 0xbc0, 0x4840, 0xb5, 0x99, &[0x13, 0x4b, 0xee, 0xa, 0x9e, 0x71]
+);
+
+const IMAGE_INFO_SIGNATURE: u32 = 0x49444849; // 'I','H','D','I'
 
 #[derive(Default)]
-struct ImageHandle {
+struct ImageInfo {
     signature: u32,
     source_buffer: usize,
     source_size: usize,
@@ -52,14 +56,14 @@ impl Image {
     ) -> (Status, Handle) {
         let mut handle_address: *mut c_void = core::ptr::null_mut();
 
-        let status = crate::efi::allocate_pool (MemoryType::BootServicesData, size_of::<ImageHandle>() as usize, &mut handle_address);
+        let status = crate::efi::allocate_pool (MemoryType::BootServicesData, size_of::<ImageInfo>() as usize, &mut handle_address);
         if status != Status::SUCCESS {
           log!("load_image - fail on allocate pool\n");
           return (status, core::ptr::null_mut())
         }
 
-        let handle = unsafe {transmute::<*mut c_void, &mut ImageHandle>(handle_address)};
-        handle.signature = HANDLE_SIGNATURE;
+        let handle = unsafe {transmute::<*mut c_void, &mut ImageInfo>(handle_address)};
+        handle.signature = IMAGE_INFO_SIGNATURE;
         handle.source_buffer = source_buffer as usize;
         handle.source_size   = source_size;
 
@@ -83,15 +87,33 @@ impl Image {
           return (Status::SECURITY_VIOLATION, core::ptr::null_mut())
         }
 
-        (Status::SUCCESS, handle_address)
+        let mut image_handle : Handle = core::ptr::null_mut();
+        let status = crate::efi::install_protocol_interface (
+                       &mut image_handle,
+                       &mut IMAGE_INFO_GUID as *mut Guid,
+                       InterfaceType::NativeInterface,
+                       handle_address
+                       );
+
+        (status, image_handle)
     }
     pub fn start_image (
         &mut self,
         image_handle: Handle,
     ) -> (Status, usize, *mut Char16) {
 
-        let handle = unsafe {transmute::<Handle, &mut ImageHandle>(image_handle)};
-        if handle.signature != HANDLE_SIGNATURE {
+        let mut handle_address: *mut c_void = core::ptr::null_mut();
+        let status = crate::efi::handle_protocol (
+                       image_handle,
+                       &mut IMAGE_INFO_GUID,
+                       &mut handle_address
+                       );
+        if status != Status::SUCCESS {
+          return (Status::INVALID_PARAMETER, 0, core::ptr::null_mut())
+        }
+
+        let handle = unsafe {transmute::<*mut c_void, &mut ImageInfo>(handle_address)};
+        if handle.signature != IMAGE_INFO_SIGNATURE {
           return (Status::INVALID_PARAMETER, 0, core::ptr::null_mut())
         }
 

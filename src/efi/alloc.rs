@@ -310,6 +310,7 @@ impl Allocator {
     }
 
     pub fn free_pages(&mut self, address: u64) -> Status {
+        log!("free_pages : 0x{:016x}\n", address);
         let mut cur = self.first_allocation;
 
         while cur != None {
