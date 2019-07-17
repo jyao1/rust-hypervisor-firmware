@@ -22,6 +22,7 @@ mod event;
 mod handle_database;
 mod variable;
 mod conout;
+mod conin;
 mod peloader;
 mod init;
 
@@ -63,6 +64,7 @@ use variable::MAX_VARIABLE_DATA;
 use image::Image;
 use event::EventInfo;
 use conout::ConOut;
+use conin::ConIn;
 
 #[cfg(not(test))]
 #[repr(C,packed)]
@@ -93,6 +95,10 @@ lazy_static! {
 
 lazy_static! {
     pub static ref CONOUT: Mutex<ConOut> = Mutex::new(ConOut::new());
+}
+
+lazy_static! {
+    pub static ref CONIN: Mutex<ConIn> = Mutex::new(ConIn::new());
 }
 
 pub fn print_guid (
@@ -190,10 +196,41 @@ pub extern "win64" fn stdin_reset(_: *mut SimpleTextInputProtocol, _: Boolean) -
 #[cfg(not(test))]
 pub extern "win64" fn stdin_read_key_stroke(
     _: *mut SimpleTextInputProtocol,
-    _: *mut InputKey,
+    key: *mut InputKey,
 ) -> Status {
-    crate::log!("EFI_STUB: stdin_read_key_stroke - UNSUPPORTED\n");
-    Status::UNSUPPORTED
+    crate::log!("EFI_STUB: stdin_read_key_stroke\n");
+    let byte = CONIN.lock().read_byte();
+
+    let mut string : [Char16; 8] = ['r' as Char16, 'e' as Char16, 'a' as Char16, 'd' as Char16, 0, 0, '\r' as Char16, 0];
+
+    //crate::log!("read - 0x{:x}\n", byte);
+
+    if byte == 0 {
+      return Status::UNSUPPORTED;
+    }
+
+    if false {
+        let c = (byte >> 4) & 0xF;
+        if (c >= 0xa) {
+          string[4] = (c - 0xau8 + 'a' as u8) as u16;
+        } else {
+          string[4] = (c + '0' as u8) as u16;
+        }
+        let c = byte & 0xF;
+        if (c >= 0xa) {
+          string[5] = (c - 0xau8 + 'a' as u8) as u16;
+        } else {
+          string[5] = (c + '0' as u8) as u16;
+        }
+        stdout_output_string (unsafe {&mut STDOUT}, &mut string as *mut [Char16; 8] as *mut u16);
+    }
+
+    unsafe {
+      (*key).scan_code = 0;
+      (*key).unicode_char = byte as Char16;
+    }
+
+    Status::SUCCESS
 }
 
 #[cfg(not(test))]
@@ -1255,24 +1292,6 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
 
     crate::efi::init::initialize_memory(hob);
     crate::efi::init::initialize_variable ();
-
-    // test begin
-
-  if false {
-    let test_string : [u8 ; 6] = ['t' as u8, 'e' as u8, 's' as u8, 't' as u8, '1' as u8, '\n' as u8] ;
-    for i in 0 .. 6 {
-      CONOUT.lock().write_byte(test_string[i]);
-    }
-    let test_string : [u8 ; 6] = ['t' as u8, 'e' as u8, 's' as u8, 't' as u8, '2' as u8, '\r' as u8] ;
-    for i in 0 .. 6 {
-      CONOUT.lock().write_byte(test_string[i]);
-    }
-    let test_string : [u8 ; 6] = ['t' as u8, 'e' as u8, 's' as u8, 't' as u8, '3' as u8, '\n' as u8] ;
-    for i in 0 .. 6 {
-      CONOUT.lock().write_byte(test_string[i]);
-    }
-  }
-    // test end
 
     let (image, size) = crate::efi::init::find_loader (hob);
 

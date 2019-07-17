@@ -65,7 +65,26 @@ impl ConOut {
         if byte == '\n' as u8 {
           self.port.write('\r' as u8)
         }
-        self.port.write(byte)
+        self.port.write(byte);
+
+        let mode : *mut SimpleTextOutputMode = self.mode_ptr as *mut c_void as *mut SimpleTextOutputMode;
+        let max_column = 80;
+        let mut max_row = 25;
+        unsafe {
+          if (*mode).mode == 1 {
+            max_row = 50;
+          }
+          if (*mode).cursor_column < max_column - 1 {
+            (*mode).cursor_column = (*mode).cursor_column + 1;
+          } else {
+            (*mode).cursor_column = 0;
+            if (*mode).cursor_row < max_row - 1 {
+              (*mode).cursor_row = (*mode).cursor_row + 1;
+            }
+            self.port.write('\r' as u8);
+            self.port.write('\n' as u8);
+          }
+        }
     }
 
     pub fn write_string(&mut self, s: &str) {
@@ -85,8 +104,17 @@ impl ConOut {
             //self.write_byte(c);
         }
 
-        if column == 0 && row == 0 {
+        if column == 0 {
             self.write_byte('\r' as u8);
+            if row != 0 {
+                //self.write_byte('\n' as u8);
+            }
+        }
+        
+        let mode : *mut SimpleTextOutputMode = self.mode_ptr as *mut c_void as *mut SimpleTextOutputMode;
+        unsafe {
+            (*mode).cursor_column = column as isize as i32;
+            (*mode).cursor_row = row as isize as i32;
         }
     }
 
@@ -107,7 +135,7 @@ impl ConOut {
           EFI_LIGHTGRAY => {foreground_control = 37},
           _ => {foreground_control = 37},
         }
-        
+
         let mut bright_control : usize = (attribute >> 3) & 1;
 
         let mut background_control : usize = 0;
@@ -156,9 +184,3 @@ impl ConOut {
     }
 }
 
-impl fmt::Write for ConOut {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.write_string(s);
-        Ok(())
-    }
-}
