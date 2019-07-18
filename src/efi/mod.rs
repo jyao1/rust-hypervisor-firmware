@@ -206,7 +206,11 @@ pub extern "win64" fn stdin_read_key_stroke(
     //crate::log!("read - 0x{:x}\n", byte);
 
     if byte == 0 {
-      return Status::UNSUPPORTED;
+      unsafe {
+        (*key).scan_code = 0;
+        (*key).unicode_char = 0;
+      }
+      return Status::NOT_READY;
     }
 
     if false {
@@ -245,16 +249,7 @@ pub extern "win64" fn stdout_output_string(
     message: *mut Char16,
 ) -> Status {
 
-    let mut i: usize = 0;
-    loop {
-        let output = (unsafe { *message.add(i) } & 0xffu16) as u8;
-        i += 1;
-        if output == 0 {
-            break;
-        } else {
-            CONOUT.lock().write_byte(output);
-        }
-    }
+    CONOUT.lock().output_string(message);
 
     Status::SUCCESS
 }
@@ -300,24 +295,7 @@ pub extern "win64" fn stdout_query_mode(
 #[cfg(not(test))]
 pub extern "win64" fn stdout_set_mode(_: *mut SimpleTextOutputProtocol, mode_number: usize) -> Status {
     crate::log!("EFI_STUB: stdout_set_mode\n");
-    match mode_number {
-      0 => {
-        unsafe {
-          STDOUT_MODE.mode = 0;
-          STDOUT_MODE.cursor_column = 80;
-          STDOUT_MODE.cursor_row = 25;
-        }
-      },
-      1 => {
-        unsafe {
-          STDOUT_MODE.mode = 1;
-          STDOUT_MODE.cursor_column = 80;
-          STDOUT_MODE.cursor_row = 50;
-        }
-      },
-      _ => { return Status::UNSUPPORTED; },
-    }
-    Status::SUCCESS
+    CONOUT.lock().set_mode(mode_number)
 }
 
 #[cfg(not(test))]
