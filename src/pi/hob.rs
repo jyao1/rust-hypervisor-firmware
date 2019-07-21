@@ -18,6 +18,10 @@ use core::ffi::c_void;
 use r_efi::efi::{PhysicalAddress, Guid, MemoryType, Boolean};
 use crate::pi::boot_mode::BootMode;
 
+pub const HOB_LIST_GUID: Guid = Guid::from_fields(
+    0x7739F24C, 0x93D7, 0x11D4, 0x9A, 0x3A, &[0x00, 0x90, 0x27, 0x3F, 0xC1, 0x4D]
+);
+
 pub type ResourceType = u32;
 
 pub const RESOURCE_SYSTEM_MEMORY:         u32 = 0x00;

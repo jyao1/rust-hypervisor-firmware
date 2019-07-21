@@ -1226,10 +1226,23 @@ pub static mut BS : efi::BootServices = efi::BootServices {
         reserved: core::ptr::null_mut(),
       };
 
-pub static mut CT : efi::ConfigurationTable = efi::ConfigurationTable {
-        vendor_guid: Guid::from_fields(0, 0, 0, 0, 0, &[0; 6]), // TODO
-        vendor_table: core::ptr::null_mut(),
-      };
+const MAX_CONFIGURATION_TABLE : usize = 4;
+
+pub static mut CT : [efi::ConfigurationTable; MAX_CONFIGURATION_TABLE] = 
+        [
+          efi::ConfigurationTable {
+            vendor_guid: Guid::from_fields(0, 0, 0, 0, 0, &[0; 6]), // TODO
+            vendor_table: core::ptr::null_mut(),},
+          efi::ConfigurationTable {
+            vendor_guid: Guid::from_fields(0, 0, 0, 0, 0, &[0; 6]), // TODO
+            vendor_table: core::ptr::null_mut(),},
+          efi::ConfigurationTable {
+            vendor_guid: Guid::from_fields(0, 0, 0, 0, 0, &[0; 6]), // TODO
+            vendor_table: core::ptr::null_mut(),},
+          efi::ConfigurationTable {
+            vendor_guid: Guid::from_fields(0, 0, 0, 0, 0, &[0; 6]), // TODO
+            vendor_table: core::ptr::null_mut(),},
+        ];
 
 pub static mut ST : efi::SystemTable = efi::SystemTable {
         hdr: efi::TableHeader {
@@ -1263,15 +1276,22 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
       ST.std_err = &mut STDOUT;
       ST.runtime_services = &mut RT;
       ST.boot_services = &mut BS;
-      ST.configuration_table = &mut CT;
+      ST.number_of_table_entries = MAX_CONFIGURATION_TABLE;
+      ST.configuration_table = &mut CT as *mut [r_efi::system::ConfigurationTable; MAX_CONFIGURATION_TABLE] as *mut r_efi::system::ConfigurationTable;
     }
     
     crate::pi::hob_lib::dump_hob (hob);
 
     crate::efi::init::initialize_memory(hob);
+    let new_hob = crate::pi::hob_lib::relocate_hob (hob);
+    unsafe {
+      CT[0].vendor_guid = crate::pi::hob::HOB_LIST_GUID;
+      CT[0].vendor_table = new_hob;
+    }
+
     crate::efi::init::initialize_variable ();
 
-    let (image, size) = crate::efi::init::find_loader (hob);
+    let (image, size) = crate::efi::init::find_loader (new_hob);
 
     let mut image_path = FullMemoryMappedDevicePath {
         memory_map: MemoryMappedDevicePathProtocol {

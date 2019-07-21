@@ -18,6 +18,14 @@ use core::ffi::c_void;
 use core::mem::transmute;
 use crate::pi::hob::*;
 
+use r_efi::efi;
+use r_efi::efi::{
+    AllocateType, MemoryType, PhysicalAddress, Status,
+};
+
+use crate::efi::ALLOCATOR;
+use crate::efi::PAGE_SIZE;
+
 #[cfg(not(test))]
 fn dump_hob_header(hob_header: & Header) {
   log!("Hob:\n");
@@ -114,4 +122,33 @@ pub fn dump_hob(hob: *const c_void) {
     let addr = hob_header as usize + header.length as usize;
     hob_header = addr as *const Header;
   }
+}
+
+#[cfg(not(test))]
+pub fn get_hob_total_size(hob: *const c_void) -> usize {
+  let phit = unsafe {transmute::<*const c_void, &HandoffInfoTable>(hob)};
+  phit.efi_end_of_hob_list as usize - hob as usize
+}
+
+#[cfg(not(test))]
+pub fn relocate_hob(hob: *const c_void) -> *mut c_void {
+
+  let hob_total_size = crate::pi::hob_lib::get_hob_total_size (hob);
+  let (status, new_hob_address) = ALLOCATOR.lock().allocate_pages(
+            AllocateType::AllocateAnyPages,
+            MemoryType::BootServicesData,
+            hob_total_size as u64 / PAGE_SIZE,
+            0,
+            );
+  if status != Status::SUCCESS {
+    return core::ptr::null_mut();
+  }
+
+  let new_hob_ptr : *mut c_void = new_hob_address as usize as *mut c_void;
+  unsafe {core::ptr::copy_nonoverlapping (hob, new_hob_ptr, hob_total_size);}
+  
+  let phit = unsafe {transmute::<*const c_void, &mut HandoffInfoTable>(new_hob_ptr)};
+  phit.efi_end_of_hob_list = ( new_hob_ptr as usize + hob_total_size ) as usize as u64;
+
+  new_hob_ptr
 }
