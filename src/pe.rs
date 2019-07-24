@@ -31,7 +31,7 @@ pub enum Error {
 
 #[repr(packed)]
 struct Section {
-    _name: [u8; 8],
+    name: [u8; 8],
     virt_size: u32,
     virt_address: u32,
     raw_size: u32,
@@ -104,6 +104,7 @@ impl<'a> Loader<'a> {
 
         self.image_base = optional_region.read_u64(24);
         self.image_size = optional_region.read_u32(56);
+        let size_of_headers = optional_region.read_u32(60);
 
         let sections = &data[(24 + pe_header_offset + u32::from(optional_header_size)) as usize..];
         let sections: &[Section] = unsafe {
@@ -114,6 +115,26 @@ impl<'a> Loader<'a> {
         };
 
         let mut loaded_region = MemoryRegion::new(address, u64::from(self.image_size));
+
+        // Copy the PE header into the start of the destination memory
+        match self.file.seek(0) {
+            Ok(_) => {}
+            Err(_) => return Err(Error::FileError),
+        }
+
+        let mut header_offset = 0u64;
+        while header_offset < u64::from(size_of_headers) {
+            match self
+                .file
+                .read(loaded_region.as_mut_slice(header_offset, 512))
+            {
+                Ok(_) => {}
+                Err(_) => {
+                    return Err(Error::FileError);
+                }
+            }
+            header_offset += 512;
+        }
 
         for section in sections {
             for x in 0..section.virt_size {
@@ -151,6 +172,43 @@ impl<'a> Loader<'a> {
                 section_offset += remaining_bytes;
             }
         }
+
+        for section in sections {
+            if &section.name[0..6] == b".reloc" {
+                let section_size = core::cmp::min(section.raw_size, section.virt_size);
+                let l: &mut [u8] = loaded_region
+                    .as_mut_slice(u64::from(section.virt_address), u64::from(section_size));
+
+                let reloc_region = MemoryRegion::from_slice(l);
+
+                let mut section_bytes_remaining = section_size;
+                let mut offset = 0;
+                while section_bytes_remaining > 0 {
+                    // Read details for block
+                    let page_rva = reloc_region.read_u32(offset);
+                    let block_size = reloc_region.read_u32(offset + 4);
+                    let mut block_offset = 0;
+                    while block_offset < block_size {
+                        let entry = reloc_region.read_u16(offset + u64::from(block_offset));
+
+                        let entry_type = entry >> 12;
+                        let entry_offset = entry & 0xfff;
+
+                        if entry_type == 10 {
+                            let location = u64::from(page_rva + u32::from(entry_offset));
+                            let value = loaded_region.read_u64(location);
+                            loaded_region.write_u64(location, value + (address - self.image_base));
+                        }
+
+                        block_offset += 2;
+                    }
+
+                    section_bytes_remaining -= block_size;
+                    offset += u64::from(block_size);
+                }
+            }
+        }
+
         Ok((address + u64::from(entry_point), u64::from(self.image_size)))
     }
 }

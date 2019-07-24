@@ -231,6 +231,9 @@ impl<'a> SectorRead for VirtioBlockDevice<'a> {
         let mut state = self.state.borrow_mut();
 
         let next_head = state.next_head;
+        if next_head >= QUEUE_SIZE {
+          // BUGBUG: it causes system hang
+        }
         let mut d = &mut state.descriptors[next_head];
         let next_desc = (next_head + 1) % QUEUE_SIZE;
         d.addr = (&header as *const _) as u64;

@@ -52,7 +52,6 @@ impl MemoryRegion {
     where
         T: Copy,
     {
-        log!("in read - size {}\n", core::mem::size_of::<T>());
         assert!((offset + (core::mem::size_of::<T>() - 1) as u64) < self.length);
         unsafe { *((self.base + offset) as *const T) }
     }

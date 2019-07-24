@@ -15,6 +15,7 @@
 #![allow(unused)]
 
 mod alloc;
+mod block;
 mod file;
 mod device_path;
 mod image;
@@ -76,6 +77,22 @@ pub struct FullMemoryMappedDevicePath {
   end: EndDevicePath,
 }
 
+#[cfg(not(test))]
+#[derive(Copy, Clone, PartialEq)]
+enum HandleType {
+    None,
+    Block,
+    FileSystem,
+    LoadedImage,
+}
+
+#[cfg(not(test))]
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct HandleWrapper {
+    handle_type: HandleType,
+}
+
 lazy_static! {
     pub static ref ALLOCATOR: Mutex<Allocator> = Mutex::new(Allocator::new());
 }
@@ -103,6 +120,22 @@ lazy_static! {
 lazy_static! {
     pub static ref CONIN: Mutex<ConIn> = Mutex::new(ConIn::new());
 }
+
+#[cfg(not(test))]
+pub static mut BLOCK_WRAPPERS: block::BlockWrappers = block::BlockWrappers {
+    wrappers: [core::ptr::null_mut(); 16],
+    count: 0,
+};
+
+#[cfg(not(test))]
+pub const BLOCK_PROTOCOL_GUID: Guid = Guid::from_fields(
+    0x964e_5b21,
+    0x6459,
+    0x11d2,
+    0x8e,
+    0x39,
+    &[0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b],
+);
 
 pub fn print_guid (
     guid: *mut Guid,

@@ -111,7 +111,7 @@ pub extern "win64" fn read(file: *mut FileProtocol, size: *mut usize, buf: *mut 
         unsafe {
             match (*wrapper).file.read(&mut data) {
                 Ok(bytes_read) => {
-                    &buf[current_offset..current_offset + bytes_read as usize]
+                    buf[current_offset..current_offset + bytes_read as usize]
                         .copy_from_slice(&data[0..bytes_read as usize]);
                     current_offset += bytes_read as usize;
 
@@ -211,9 +211,12 @@ struct FileWrapper<'a> {
 }
 
 #[cfg(not(test))]
+#[repr(C)]
 pub struct FileSystemWrapper<'a> {
+    hw: super::HandleWrapper,
     fs: &'a crate::fat::Filesystem<'a>,
     pub proto: SimpleFileSystemProtocol,
+    pub block_part_id: u32,
 }
 
 #[cfg(not(test))]
@@ -252,13 +255,17 @@ impl<'a> FileSystemWrapper<'a> {
         }
     }
 
-    pub fn new(fs: &'a crate::fat::Filesystem) -> FileSystemWrapper<'a> {
+    pub fn new(fs: &'a crate::fat::Filesystem, block_part_id: u32) -> FileSystemWrapper<'a> {
         FileSystemWrapper {
+            hw: super::HandleWrapper {
+                handle_type: super::HandleType::FileSystem,
+            },
             fs,
             proto: SimpleFileSystemProtocol {
                 revision: r_efi::protocols::simple_file_system::REVISION,
                 open_volume: filesystem_open_volume,
             },
+            block_part_id,
         }
     }
 }

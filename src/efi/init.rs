@@ -37,7 +37,6 @@ use crate::efi::ALLOCATOR;
 use crate::efi::PAGE_SIZE;
 
 use crate::pci;
-use crate::block;
 use crate::part;
 use crate::fat;
 use crate::efi::file;
@@ -154,7 +153,7 @@ pub fn initialize_fs() {
     match pci::search_bus(VIRTIO_PCI_VENDOR_ID, VIRTIO_PCI_BLOCK_DEVICE_ID) {
       Some(pci_device) => {
         pci_transport = pci::VirtioPciTransport::new(pci_device);
-        device = block::VirtioBlockDevice::new(&mut pci_transport);
+        device = crate::block::VirtioBlockDevice::new(&mut pci_transport);
       },
       _ => {
         return ;
@@ -192,7 +191,9 @@ pub fn initialize_fs() {
     log!("Filesystem ready\n");
 
   if false {
-    let mut wrapped_fs = file::FileSystemWrapper::new(&f);
+    let efi_part_id = unsafe { crate::efi::block::populate_block_wrappers(&mut crate::efi::BLOCK_WRAPPERS, &device) };
+
+    let mut wrapped_fs = file::FileSystemWrapper::new(&f, efi_part_id);
 
     let mut handle : Handle = core::ptr::null_mut();
     let status = crate::efi::install_protocol_interface (
