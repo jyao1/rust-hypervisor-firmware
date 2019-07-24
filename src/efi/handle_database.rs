@@ -110,6 +110,59 @@ impl HandleDatabase {
         (Status::SUCCESS, cur_handle)
     }
 
+    pub fn install_multiple_protocol (
+        &mut self,
+        handle: Handle,
+        count : usize,
+        pair : *mut [(*mut Guid, *mut c_void); 8],
+    ) -> (Status, Handle) {
+        assert!(count <= 8);
+        assert!(count <= MAX_PROTOCOL_STRUCT);
+        assert!(count > 0);
+
+        let (status, mut cur_handle) = self.get_handle (handle);
+        match status {
+          Status::SUCCESS => {
+            assert!(cur_handle != core::ptr::null_mut());
+            let protocol_handle = unsafe {transmute::<Handle, *mut ProtocolHandle>(cur_handle)};
+            unsafe { assert!((*protocol_handle).signature == HANDLE_SIGNATURE); }
+            if unsafe {(*protocol_handle).protocol_count} > MAX_PROTOCOL_STRUCT - count {
+              return (Status::OUT_OF_RESOURCES, core::ptr::null_mut());
+            }
+            for index in 0 .. count {
+              let (status, protocol_struct) = self.get_protocol (protocol_handle, unsafe {(*pair)[index].0});
+              if status == Status::SUCCESS {
+                return (Status::INVALID_PARAMETER, core::ptr::null_mut());
+              }
+            }
+          },
+          Status::NOT_FOUND => {
+            let (status, new_handle) = self.get_new_handle ();
+            match status {
+              Status::SUCCESS => {},
+              _ => {return (status, core::ptr::null_mut());},
+            }
+            cur_handle = new_handle;
+          },
+          _ => {return (status, core::ptr::null_mut());},
+        }
+
+        assert!(cur_handle != core::ptr::null_mut());
+        let protocol_handle = unsafe {transmute::<Handle, *mut ProtocolHandle>(cur_handle)};
+        unsafe { assert!((*protocol_handle).signature == HANDLE_SIGNATURE); }
+        for index in 0 .. count {
+            let (status, new_protocol_struct) = self.get_new_protocol (protocol_handle);
+            assert!(status == Status::SUCCESS);
+            let cur_protocol_struct = new_protocol_struct;
+
+            let protocol_struct = unsafe {transmute::<*mut ProtocolStruct, &mut ProtocolStruct>(cur_protocol_struct)};
+            protocol_struct.guid = unsafe {*((*pair)[index].0)};
+            protocol_struct.interface = unsafe {(*pair)[index].1} as usize;
+        }
+
+        (Status::SUCCESS, cur_handle)
+    }
+
     fn locate_handle_count (
         &mut self,
         guid : *mut Guid,

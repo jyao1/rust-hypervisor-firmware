@@ -30,6 +30,7 @@ use lazy_static::lazy_static;
 use spin::Mutex;
 use core::fmt;
 use cpuio::Port;
+use core::mem::transmute;
 
 use r_efi::efi;
 use r_efi::efi::{
@@ -1039,6 +1040,131 @@ pub extern "win64" fn locate_protocol(guid: *mut Guid, registration: *mut c_void
     log!("status - {:?}\n", status);
     status
 }
+//
+// NOTE:
+// see https://github.com/rust-lang/rfcs/blob/master/text/2137-variadic.md
+// Current vararg support only "C".
+// "win64" is not supported.
+//
+// As such we cannot use below:
+// pub unsafe extern "C" fn install_multiple_protocol_interfaces(
+//    handle: *mut Handle,
+//    mut args: ...
+// ) -> Status;
+//
+// NOTE: Current EDKII has use case with 5 guid/interface pairs.
+// So we hardcode to support 8 pairs as maximum. It should be enought.
+//
+#[cfg(not(test))]
+pub extern "win64" fn install_multiple_protocol_interfaces_real(
+    handle: *mut Handle,
+    guid1: *mut Guid,
+    interface1: *mut c_void,
+    guid2: *mut Guid,
+    interface2: *mut c_void,
+    guid3: *mut Guid,
+    interface3: *mut c_void,
+    guid4: *mut Guid,
+    interface4: *mut c_void,
+    guid5: *mut Guid,
+    interface5: *mut c_void,
+    guid6: *mut Guid,
+    interface6: *mut c_void,
+    guid7: *mut Guid,
+    interface7: *mut c_void,
+    guid8: *mut Guid,
+    interface8: *mut c_void,
+    guid_null: *mut c_void,
+) -> Status {
+    let mut count : usize = 0;
+    let mut pair : [(*mut Guid, *mut c_void); 8] = [(core::ptr::null_mut(), core::ptr::null_mut()) ; 8];
+
+    if guid1 == core::ptr::null_mut() {
+      crate::log!("EFI_STUB: install_multiple_protocol_interfaces_real - no GUID/Interface pair\n");
+      return Status::INVALID_PARAMETER;
+    } else {
+      count = 1;
+      pair[0] = (guid1, interface1);
+    }
+    if guid2 != core::ptr::null_mut() {
+      count = 2;
+      pair[1] = (guid2, interface2);
+    }
+    if guid3 != core::ptr::null_mut() {
+      count = 3;
+      pair[2] = (guid3, interface3);
+    }
+    if guid4 != core::ptr::null_mut() {
+      count = 4;
+      pair[3] = (guid4, interface4);
+    }
+    if guid5 != core::ptr::null_mut() {
+      count = 5;
+      pair[4] = (guid5, interface5);
+    }
+    if guid6 != core::ptr::null_mut() {
+      count = 6;
+      pair[5] = (guid6, interface6);
+    }
+    if guid7 != core::ptr::null_mut() {
+      count = 7;
+      pair[6] = (guid7, interface7);
+    }
+    if guid8 != core::ptr::null_mut() {
+      count = 8;
+      pair[7] = (guid8, interface8);
+    }
+    if guid_null != core::ptr::null_mut() {
+      crate::log!("EFI_STUB: install_multiple_protocol_interfaces_real - too many GUID/Interface pair\n");
+      return Status::UNSUPPORTED;
+    }
+
+    crate::log!("EFI_STUB: install_multiple_protocol_interfaces_real:\n");
+    for index in 0 .. count {
+      crate::log!("  ");
+      print_guid (pair[index].0);
+      crate::log!("  ");
+      crate::log!("{:p}", pair[index].1);
+      crate::log!("\n");
+    }
+
+    let (status, new_handle) = HANDLE_DATABASE.lock().install_multiple_protocol(
+                unsafe {*handle},
+                count,
+                &mut pair
+                );
+    log!("status - {:?}\n", status);
+    if status == Status::SUCCESS {
+        unsafe {
+            *handle = new_handle;
+        }
+    }
+    status
+}
+
+pub extern "win64" fn uninstall_multiple_protocol_interfaces_real(
+    handle: *mut Handle,
+    guid1: *mut Guid,
+    interface1: *mut c_void,
+    guid2: *mut Guid,
+    interface2: *mut c_void,
+    guid3: *mut Guid,
+    interface3: *mut c_void,
+    guid4: *mut Guid,
+    interface4: *mut c_void,
+    guid5: *mut Guid,
+    interface5: *mut c_void,
+    guid6: *mut Guid,
+    interface6: *mut c_void,
+    guid7: *mut Guid,
+    interface7: *mut c_void,
+    guid8: *mut Guid,
+    interface8: *mut c_void,
+    guid_null: *mut c_void,
+) -> Status {
+    crate::log!("EFI_STUB: uninstall_multiple_protocol_interfaces_real - UNSUPPORTED\n");
+    Status::UNSUPPORTED
+}
 
 #[cfg(not(test))]
 pub extern "win64" fn install_multiple_protocol_interfaces(
@@ -1172,6 +1298,9 @@ pub static mut RT : efi::RuntimeServices = efi::RuntimeServices {
         query_variable_info,
       };
 
+pub type InstallMultipleProtocolInterfacesFunc = extern "win64" fn(*mut Handle, *mut c_void, *mut c_void) -> r_efi::base::Status;
+pub type UninstallMultipleProtocolInterfacesFunc = extern "win64" fn(*mut Handle,*mut c_void,*mut c_void,) -> r_efi::base::Status;
+
 pub static mut BS : efi::BootServices = efi::BootServices {
         hdr: efi::TableHeader {
             signature: efi::BOOT_SERVICES_SIGNATURE,
@@ -1276,6 +1405,12 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
       ST.std_err = &mut STDOUT;
       ST.runtime_services = &mut RT;
       ST.boot_services = &mut BS;
+
+      let func_addr_ptr = unsafe {transmute::<&mut InstallMultipleProtocolInterfacesFunc, *mut usize>(&mut BS.install_multiple_protocol_interfaces)};
+      unsafe {*func_addr_ptr = install_multiple_protocol_interfaces_real as usize;}
+      let func_addr_ptr = unsafe {transmute::<&mut UninstallMultipleProtocolInterfacesFunc, *mut usize>(&mut BS.uninstall_multiple_protocol_interfaces)};
+      unsafe {*func_addr_ptr = uninstall_multiple_protocol_interfaces_real as usize;}
+
       ST.number_of_table_entries = MAX_CONFIGURATION_TABLE;
       ST.configuration_table = &mut CT as *mut [r_efi::system::ConfigurationTable; MAX_CONFIGURATION_TABLE] as *mut r_efi::system::ConfigurationTable;
     }

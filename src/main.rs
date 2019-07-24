@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #![allow(unused)]
-
+#![feature(c_variadic)]
 #![feature(asm)]
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
