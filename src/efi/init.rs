@@ -22,6 +22,8 @@ use r_efi::efi::{
 };
 use r_efi::system::{VARIABLE_NON_VOLATILE, VARIABLE_BOOTSERVICE_ACCESS, VARIABLE_RUNTIME_ACCESS};
 
+use r_efi::protocols::simple_file_system::Protocol as SimpleFileSystemProtocol;
+
 use core::ffi::c_void;
 use core::mem::transmute;
 use core::mem::size_of;
@@ -33,6 +35,12 @@ use crate::mem::MemoryRegion;
 use crate::efi::alloc::Allocator;
 use crate::efi::ALLOCATOR;
 use crate::efi::PAGE_SIZE;
+
+use crate::pci;
+use crate::block;
+use crate::part;
+use crate::fat;
+use crate::efi::file;
 
 #[cfg(not(test))]
 pub fn initialize_memory(hob: *const c_void) {
@@ -104,4 +112,99 @@ pub fn initialize_variable() {
     );
 }
 
-// 
+pub fn initialize_console(system_table: *mut efi::SystemTable, con_in_ex: *mut c_void) {
+  unsafe {
+    let status = crate::efi::install_protocol_interface (
+                       &mut (*system_table).console_in_handle as *mut Handle,
+                       &mut r_efi::protocols::simple_text_input::PROTOCOL_GUID as *mut Guid,
+                       InterfaceType::NativeInterface,
+                       (*system_table).con_in as *mut c_void
+                       );
+    let status = crate::efi::install_protocol_interface (
+                       &mut (*system_table).console_in_handle as *mut Handle,
+                       &mut r_efi::protocols::simple_text_input_ex::PROTOCOL_GUID as *mut Guid,
+                       InterfaceType::NativeInterface,
+                       con_in_ex
+                       );
+    let status = crate::efi::install_protocol_interface (
+                       &mut (*system_table).console_out_handle as *mut Handle,
+                       &mut r_efi::protocols::simple_text_output::PROTOCOL_GUID as *mut Guid,
+                       InterfaceType::NativeInterface,
+                       (*system_table).con_out as *mut c_void
+                       );
+    let status = crate::efi::install_protocol_interface (
+                       &mut (*system_table).standard_error_handle as *mut Handle,
+                       &mut r_efi::protocols::simple_text_output::PROTOCOL_GUID as *mut Guid,
+                       InterfaceType::NativeInterface,
+                       (*system_table).std_err as *mut c_void
+                       );
+  }
+}
+
+#[cfg(not(test))]
+const VIRTIO_PCI_VENDOR_ID: u16 = 0x1af4;
+#[cfg(not(test))]
+const VIRTIO_PCI_BLOCK_DEVICE_ID: u16 = 0x1042;
+
+pub fn initialize_fs() {
+    pci::print_bus();
+
+    let mut pci_transport;
+    let mut device;
+    match pci::search_bus(VIRTIO_PCI_VENDOR_ID, VIRTIO_PCI_BLOCK_DEVICE_ID) {
+      Some(pci_device) => {
+        pci_transport = pci::VirtioPciTransport::new(pci_device);
+        device = block::VirtioBlockDevice::new(&mut pci_transport);
+      },
+      _ => {
+        return ;
+      }
+    }
+
+    match device.init() {
+        Err(_) => {
+            log!("Error configuring block device\n");
+            return ;
+        }
+        Ok(_) => log!(
+            "Virtio block device configured. Capacity: {} sectors\n",
+            device.get_capacity()
+        ),
+    }
+
+    let mut f;
+
+    match part::find_efi_partition(&device) {
+        Ok((start, end)) => {
+            log!("Found EFI partition\n");
+            f = fat::Filesystem::new(&device, start, end);
+            if f.init().is_err() {
+                log!("Failed to create filesystem\n");
+                return ;
+            }
+        }
+        Err(_) => {
+            log!("Failed to find EFI partition\n");
+            return ;
+        }
+    }
+
+    log!("Filesystem ready\n");
+
+  if false {
+    let mut wrapped_fs = file::FileSystemWrapper::new(&f);
+
+    let mut handle : Handle = core::ptr::null_mut();
+    let status = crate::efi::install_protocol_interface (
+                       &mut handle as *mut Handle,
+                       &mut r_efi::protocols::simple_file_system::PROTOCOL_GUID as *mut Guid,
+                       InterfaceType::NativeInterface,
+                       &mut wrapped_fs.proto as *mut SimpleFileSystemProtocol as *mut c_void
+                       );
+    if status != Status::SUCCESS {
+      return ;
+    }
+    log!("Filesystem installed\n");
+  }
+}
+ 

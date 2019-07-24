@@ -36,7 +36,7 @@ struct Allocation {
     descriptor: MemoryDescriptor,
 }
 
-const MAX_ALLOCATIONS: usize = 128;
+const MAX_ALLOCATIONS: usize = 512;
 
 #[derive(Clone)]
 pub struct Allocator {

@@ -26,6 +26,8 @@ use r_efi::efi::Status;
 
 use crate::efi::STDOUT_MODE;
 
+const OUTPUT_ESC : bool = false;
+
 const CHAR_BACKSPACE       : u8 = 0x08;
 const CHAR_TAB             : u8 = 0x09;
 const CHAR_LINEFEED        : u8 = 0x0a;
@@ -135,7 +137,9 @@ impl ConOut {
           SET_CURSOR_POSITION_STRING[COLUMN_OFFSET + 0] = ('0' as usize + ((column + 1) / 10)) as u16;
           SET_CURSOR_POSITION_STRING[COLUMN_OFFSET + 1] = ('0' as usize + ((column + 1) % 10)) as u16;
 
-          self.output_string(&mut SET_CURSOR_POSITION_STRING as *mut [u16; SET_CURSOR_POSITION_STRING_SIZE] as *mut u16);
+          if (OUTPUT_ESC) {
+            self.output_string(&mut SET_CURSOR_POSITION_STRING as *mut [u16; SET_CURSOR_POSITION_STRING_SIZE] as *mut u16);
+          }
         }
         
         let mode : *mut SimpleTextOutputMode = self.mode_ptr as *mut c_void as *mut SimpleTextOutputMode;
@@ -204,7 +208,9 @@ impl ConOut {
           SET_ATTRIBUTE_STRING[BACKGROUND_CONTROL_OFFSET + 0] = ('0' as usize + (background_control / 10)) as u16;
           SET_ATTRIBUTE_STRING[BACKGROUND_CONTROL_OFFSET + 1] = ('0' as usize + (background_control % 10)) as u16;
 
-          self.output_string(&mut SET_ATTRIBUTE_STRING as *mut [u16; SET_ATTRIBUTE_STRING_SIZE] as *mut u16);
+          if (OUTPUT_ESC) {
+            self.output_string(&mut SET_ATTRIBUTE_STRING as *mut [u16; SET_ATTRIBUTE_STRING_SIZE] as *mut u16);
+          }
         }
         unsafe {
             (*mode).cursor_column = saved_column;
@@ -215,7 +221,9 @@ impl ConOut {
 
     pub fn clear_screen(&mut self) {
         unsafe {
-          self.output_string(&mut CLEAR_SCREEN_STRING as *mut [u16; CLEAR_SCREEN_STRING_SIZE] as *mut u16);
+          if (OUTPUT_ESC) {
+            self.output_string(&mut CLEAR_SCREEN_STRING as *mut [u16; CLEAR_SCREEN_STRING_SIZE] as *mut u16);
+          }
         }
 
         self.set_cursor_position (0, 0);
@@ -234,7 +242,9 @@ impl ConOut {
 
       self.clear_screen ();
       unsafe {
-        self.output_string(&mut SET_MODE_STRING as *mut [u16; SET_MODE_STRING_SIZE] as *mut u16);
+        if (OUTPUT_ESC) {
+          self.output_string(&mut SET_MODE_STRING as *mut [u16; SET_MODE_STRING_SIZE] as *mut u16);
+        }
       }
       
       unsafe {

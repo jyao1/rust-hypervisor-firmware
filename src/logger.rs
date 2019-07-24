@@ -96,13 +96,18 @@ impl fmt::Write for Logger {
 
 #[macro_export]
 macro_rules! log {
-    //($($arg:tt)*) => ($crate::logger::_log_ex(crate::logger::LOG_LEVEL_VERBOSE, crate::logger::LOG_MASK_COMMON, format_args!($($arg)*)));
-    ($($arg:tt)*) => ($crate::logger::_log_ex(crate::logger::LOG_LEVEL_VERBOSE, 0, format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::logger::_log_ex(crate::logger::LOG_LEVEL_VERBOSE, crate::logger::LOG_MASK_COMMON, format_args!($($arg)*)));
+    //($($arg:tt)*) => ($crate::logger::_log_ex(crate::logger::LOG_LEVEL_VERBOSE, 0, format_args!($($arg)*)));
 }
 
 #[macro_export]
 macro_rules! log_ex {
     ($level:expr, $mask:expr, $($arg:tt)*) => ($crate::logger::_log_ex($level, $mask, format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! log_always {
+    ($($arg:tt)*) => ($crate::logger::_log(format_args!($($arg)*)));
 }
 
 #[cfg(not(test))]

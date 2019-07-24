@@ -41,6 +41,8 @@ use r_efi::efi::{
 
 use r_efi::protocols::simple_text_input::InputKey;
 use r_efi::protocols::simple_text_input::Protocol as SimpleTextInputProtocol;
+use r_efi::protocols::simple_text_input_ex::{KeyData, KeyToggleState, KeyNotifyFunction};
+use r_efi::protocols::simple_text_input_ex::Protocol as SimpleTextInputExProtocol;
 use r_efi::protocols::simple_text_output::Mode as SimpleTextOutputMode;
 use r_efi::protocols::simple_text_output::Protocol as SimpleTextOutputProtocol;
 //use r_efi::protocols::loaded_image::Protocol as LoadedImageProtocol;
@@ -199,13 +201,7 @@ pub extern "win64" fn stdin_read_key_stroke(
     _: *mut SimpleTextInputProtocol,
     key: *mut InputKey,
 ) -> Status {
-    crate::log!("EFI_STUB: stdin_read_key_stroke\n");
     let byte = CONIN.lock().read_byte();
-
-    let mut string : [Char16; 8] = ['r' as Char16, 'e' as Char16, 'a' as Char16, 'd' as Char16, 0, 0, '\r' as Char16, 0];
-
-    //crate::log!("read - 0x{:x}\n", byte);
-
     if byte == 0 {
       unsafe {
         (*key).scan_code = 0;
@@ -215,6 +211,7 @@ pub extern "win64" fn stdin_read_key_stroke(
     }
 
     if false {
+        let mut string : [Char16; 8] = ['r' as Char16, 'e' as Char16, 'a' as Char16, 'd' as Char16, 0, 0, '\r' as Char16, 0];
         let c = (byte >> 4) & 0xF;
         if (c >= 0xa) {
           string[4] = (c - 0xau8 + 'a' as u8) as u16;
@@ -239,6 +236,67 @@ pub extern "win64" fn stdin_read_key_stroke(
 }
 
 #[cfg(not(test))]
+pub extern "win64" fn stdin_reset_ex(_: *mut SimpleTextInputExProtocol, _: Boolean) -> Status {
+    crate::log!("EFI_STUB: stdin_reset_ex\n");
+    Status::SUCCESS
+}
+
+#[cfg(not(test))]
+pub extern "win64" fn stdin_read_key_stroke_ex(
+    _: *mut SimpleTextInputExProtocol,
+    key_data: *mut KeyData,
+) -> Status {
+    let byte = CONIN.lock().read_byte();
+    if byte == 0 {
+      unsafe {
+        (*key_data).key.scan_code = 0;
+        (*key_data).key.unicode_char = 0;
+        (*key_data).key_state.key_shift_state = 0;
+        (*key_data).key_state.key_toggle_state = 0;
+      }
+      return Status::NOT_READY;
+    }
+
+    unsafe {
+      (*key_data).key.scan_code = 0;
+      (*key_data).key.unicode_char = byte as Char16;
+      (*key_data).key_state.key_shift_state = 0;
+      (*key_data).key_state.key_toggle_state = 0;
+    }
+
+    Status::SUCCESS
+}
+
+#[cfg(not(test))]
+pub extern "win64" fn stdin_set_state(
+    _: *mut SimpleTextInputExProtocol,
+    _: *mut KeyToggleState,
+) -> Status {
+    crate::log!("EFI_STUB: stdin_set_state\n");
+    Status::UNSUPPORTED
+}
+
+#[cfg(not(test))]
+pub extern "win64" fn stdin_register_key_notify(
+    _: *mut SimpleTextInputExProtocol,
+    _: *mut KeyData,
+    _: KeyNotifyFunction,
+    _: *mut *mut core::ffi::c_void,
+) -> Status {
+    crate::log!("EFI_STUB: stdin_register_key_notify\n");
+    Status::SUCCESS
+}
+
+#[cfg(not(test))]
+pub extern "win64" fn stdin_unregister_key_notify(
+    _: *mut SimpleTextInputExProtocol,
+    _: *mut core::ffi::c_void,
+) -> Status {
+    crate::log!("EFI_STUB: stdin_unregister_key_notify\n");
+    Status::UNSUPPORTED
+}
+
+#[cfg(not(test))]
 pub extern "win64" fn stdout_reset(_: *mut SimpleTextOutputProtocol, _: Boolean) -> Status {
     crate::log!("EFI_STUB: stdout_reset\n");
     Status::SUCCESS
@@ -260,7 +318,6 @@ pub extern "win64" fn stdout_test_string(
     _: *mut SimpleTextOutputProtocol,
     message: *mut Char16,
 ) -> Status {
-    crate::log!("EFI_STUB: stdout_test_string\n");
     Status::SUCCESS
 }
 
@@ -271,7 +328,6 @@ pub extern "win64" fn stdout_query_mode(
     columns: *mut usize,
     raws: *mut usize,
 ) -> Status {
-    crate::log!("EFI_STUB: stdout_query_mode - {}\n", mode_number);
     if columns == core::ptr::null_mut() || raws == core::ptr::null_mut() {
       return Status::INVALID_PARAMETER;
     }
@@ -295,20 +351,17 @@ pub extern "win64" fn stdout_query_mode(
 
 #[cfg(not(test))]
 pub extern "win64" fn stdout_set_mode(_: *mut SimpleTextOutputProtocol, mode_number: usize) -> Status {
-    crate::log!("EFI_STUB: stdout_set_mode\n");
     CONOUT.lock().set_mode(mode_number)
 }
 
 #[cfg(not(test))]
 pub extern "win64" fn stdout_set_attribute(_: *mut SimpleTextOutputProtocol, attribute: usize) -> Status {
-    crate::log!("EFI_STUB: stdout_set_attribute 0x{:x}\n", attribute);
     CONOUT.lock().set_attribute(attribute);
     Status::SUCCESS
 }
 
 #[cfg(not(test))]
 pub extern "win64" fn stdout_clear_screen(_: *mut SimpleTextOutputProtocol) -> Status {
-    crate::log!("EFI_STUB: stdout_clear_screen\n");
     CONOUT.lock().clear_screen();
     Status::SUCCESS
 }
@@ -319,14 +372,12 @@ pub extern "win64" fn stdout_set_cursor_position(
     column: usize,
     row: usize,
 ) -> Status {
-    crate::log!("EFI_STUB: stdout_set_cursor_position {} {}\n", column, row);
     CONOUT.lock().set_cursor_position(column, row);
     Status::SUCCESS
 }
 
 #[cfg(not(test))]
 pub extern "win64" fn stdout_enable_cursor(_: *mut SimpleTextOutputProtocol, visible: Boolean) -> Status {
-    crate::log!("EFI_STUB: stdout_enable_cursor\n");
     Status::SUCCESS
 }
 
@@ -389,13 +440,14 @@ pub extern "win64" fn get_variable(
     size: *mut usize,
     data: *mut core::ffi::c_void,
 ) -> Status {
-    crate::log!("EFI_STUB: get_variable ");
-
     let var_name_size = get_char16_size (var_name, core::usize::MAX);
-    print_char16 (var_name, var_name_size);
-    crate::log!(" ");
-    print_guid (var_guid);
-    crate::log!("\n");
+    if false {
+      crate::log!("EFI_STUB: get_variable ");
+      print_char16 (var_name, var_name_size);
+      crate::log!(" ");
+      print_guid (var_guid);
+      crate::log!("\n");
+    }
 
     if var_name_size > MAX_VARIABLE_NAME {
       crate::log!("name too long\n");
@@ -454,13 +506,14 @@ pub extern "win64" fn set_variable(
     size: usize,
     data: *mut c_void,
 ) -> Status {
-    crate::log!("EFI_STUB: set_variable ");
-
     let var_name_size = get_char16_size (var_name, core::usize::MAX);
-    print_char16 (var_name, var_name_size);
-    crate::log!(" ");
-    print_guid (var_guid);
-    crate::log!("\n");
+    if false {
+      crate::log!("EFI_STUB: set_variable ");
+      print_char16 (var_name, var_name_size);
+      crate::log!(" ");
+      print_guid (var_guid);
+      crate::log!("\n");
+    }
 
     if var_name_size > MAX_VARIABLE_NAME {
       crate::log!("name too long\n");
@@ -667,7 +720,6 @@ pub extern "win64" fn set_timer(_: Event, _: TimerDelay, _: u64) -> Status {
 
 #[cfg(not(test))]
 pub extern "win64" fn wait_for_event(_: usize, _: *mut Event, _: *mut usize) -> Status {
-    crate::log!("EFI_STUB: wait_for_event - UNSUPPORTED\n");
     Status::UNSUPPORTED
 }
 
@@ -685,7 +737,6 @@ pub extern "win64" fn close_event(_: Event) -> Status {
 
 #[cfg(not(test))]
 pub extern "win64" fn check_event(_: Event) -> Status {
-    crate::log!("EFI_STUB: check_event - UNSUPPORTED\n");
     Status::UNSUPPORTED
 }
 
@@ -746,16 +797,16 @@ pub extern "win64" fn handle_protocol(
         return Status::INVALID_PARAMETER;
     }
 
-    crate::log!("EFI_STUB: handle_protocol - ");
-    print_guid (guid);
-    crate::log!("\n");
-
     let (status, interface) = HANDLE_DATABASE.lock().handle_protocol(handle, guid);
-    log!("status - {:?}\n", status);
     if status == Status::SUCCESS {
         unsafe {
             *out = interface;
         }
+    } else {
+      crate::log!("EFI_STUB: handle_protocol - ");
+      print_guid (guid);
+      crate::log!("\n");
+      log!("status - {:?}\n", status);
     }
     status
 }
@@ -783,17 +834,16 @@ pub extern "win64" fn locate_handle(
         return Status::INVALID_PARAMETER;
     }
 
-    crate::log!("EFI_STUB: locate_handle - ");
-    print_guid (guid);
-    crate::log!("\n");
-    
-    log!("locate_search_type - {}\n", locate_search_type as u32);
-    log!("search_key - {:p}\n", search_key);
+    // crate::log!("EFI_STUB: locate_handle - ");
+    // print_guid (guid);
+    // crate::log!("\n");
 
     if locate_search_type as u32 != LocateSearchType::ByProtocol as u32 {
+      log!("locate_search_type - {}\n", locate_search_type as u32);
       return Status::UNSUPPORTED;
     }
     if search_key != core::ptr::null_mut() {
+      log!("search_key - {:p}\n", search_key);
       return Status::UNSUPPORTED;
     }
 
@@ -896,7 +946,6 @@ pub extern "win64" fn get_next_monotonic_count(_: *mut u64) -> Status {
 
 #[cfg(not(test))]
 pub extern "win64" fn stall(_: usize) -> Status {
-    crate::log!("EFI_STUB: stall\n");
     Status::SUCCESS
 }
 
@@ -996,17 +1045,16 @@ pub extern "win64" fn locate_handle_buffer(
         return Status::INVALID_PARAMETER;
     }
 
-    crate::log!("EFI_STUB: locate_handle_buffer - ");
-    print_guid (guid);
-    crate::log!("\n");
-
-    log!("locate_search_type - {}\n", locate_search_type as u32);
-    log!("search_key - {:p}\n", search_key);
+    // crate::log!("EFI_STUB: locate_handle_buffer - ");
+    // print_guid (guid);
+    // crate::log!("\n");
 
     if locate_search_type as u32 != LocateSearchType::ByProtocol as u32 {
+      log!("locate_search_type - {}\n", locate_search_type as u32);
       return Status::UNSUPPORTED;
     }
     if search_key != core::ptr::null_mut() {
+      log!("search_key - {:p}\n", search_key);
       return Status::UNSUPPORTED;
     }
 
@@ -1028,16 +1076,16 @@ pub extern "win64" fn locate_protocol(guid: *mut Guid, registration: *mut c_void
         return Status::INVALID_PARAMETER;
     }
 
-    crate::log!("EFI_STUB: locate_protocol - ");
-    print_guid (guid);
-    crate::log!("\n");
-
     let (status, new_interface) = HANDLE_DATABASE.lock().locate_protocol(guid);
     if status == Status::SUCCESS {
       unsafe {*interface = new_interface; }
+    } else {
+      crate::log!("EFI_STUB: locate_protocol - ");
+      print_guid (guid);
+      crate::log!("\n");
+      log!("status - {:?}\n", status);
     }
 
-    log!("status - {:?}\n", status);
     status
 }
 //
@@ -1194,7 +1242,6 @@ pub extern "win64" fn uninstall_multiple_protocol_interfaces(
 
 #[cfg(not(test))]
 pub extern "win64" fn calculate_crc32(_: *mut c_void, _: usize, _: *mut u32) -> Status {
-    crate::log!("EFI_STUB: calculate_crc32\n");
     Status::SUCCESS
 }
 
@@ -1239,17 +1286,20 @@ extern "win64" fn image_unload(_: Handle) -> Status {
 #[cfg(not(test))]
 pub const PAGE_SIZE: u64 = 4096;
 
-#[cfg(not(test))]
-const STDIN_HANDLE: Handle = 0 as Handle;
-#[cfg(not(test))]
-const STDOUT_HANDLE: Handle = 1 as Handle;
-#[cfg(not(test))]
-const STDERR_HANDLE: Handle = 2 as Handle;
-
 pub static mut STDIN : SimpleTextInputProtocol = SimpleTextInputProtocol {
           reset: stdin_reset,
           read_key_stroke: stdin_read_key_stroke,
           wait_for_key: 0 as Event,
+      };
+
+pub static mut STDIN_EX : SimpleTextInputExProtocol = SimpleTextInputExProtocol {
+          reset: stdin_reset_ex,
+          read_key_stroke_ex: stdin_read_key_stroke_ex,
+          wait_for_key_ex: 0 as Event,
+          set_state: stdin_set_state,
+          register_key_notify: stdin_register_key_notify,
+          unregister_key_notify: stdin_unregister_key_notify,
+
       };
 
 pub static mut STDOUT_MODE : SimpleTextOutputMode = SimpleTextOutputMode {
@@ -1383,11 +1433,11 @@ pub static mut ST : efi::SystemTable = efi::SystemTable {
         },
         firmware_vendor: core::ptr::null_mut(), // TODO,
         firmware_revision: 0,
-        console_in_handle: STDIN_HANDLE,
+        console_in_handle: core::ptr::null_mut(),
         con_in: core::ptr::null_mut(),
-        console_out_handle: STDOUT_HANDLE,
+        console_out_handle: core::ptr::null_mut(),
         con_out: core::ptr::null_mut(),
-        standard_error_handle: STDERR_HANDLE,
+        standard_error_handle: core::ptr::null_mut(),
         std_err: core::ptr::null_mut(),
         runtime_services: core::ptr::null_mut(),
         boot_services: core::ptr::null_mut(),
@@ -1424,7 +1474,13 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
       CT[0].vendor_table = new_hob;
     }
 
+    unsafe {
+      crate::efi::init::initialize_console (&mut ST, &mut STDIN_EX as *mut SimpleTextInputExProtocol as *mut c_void);
+    }
+
     crate::efi::init::initialize_variable ();
+    
+    crate::efi::init::initialize_fs ();
 
     let (image, size) = crate::efi::init::find_loader (new_hob);
 
