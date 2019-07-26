@@ -1,7 +1,7 @@
 [package]
-name = "hypervisor-fw"
-version = "0.1.0"
-authors = ["Rob Bradford <robert.bradford@intel.com>"]
+name = "payload-efi"
+version = "0.0.1"
+authors = ["Jiewen Yao <jiewen.yao@intel.com>"]
 edition = "2018"
 
 # the profile used for `cargo build`

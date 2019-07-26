@@ -4,13 +4,23 @@
 
 ## Building
 
-To compile:
+1) Install rust (https://www.rust-lang.org/)
 
+2) Intall xbuild
+
+```
+cargo install cargo-xbuild
+```
+
+3) Compile the code
+
+```
 cargo xbuild --release --target target.json
+```
 
-The result will be in:
+4) The result will be in:
 
-target/target/release/hypervisor-fw
+target/target/release/payload-efi
 
 ## Running
 
@@ -39,8 +49,11 @@ It supports some simple commands.
 
 ## Boot Flow
 
-The EDKII SEC loads hypervisor-fw as UEFI core.
-Then the hypervisor-fw loads the EDKII UEFI shell.
+The payload-efi can be treated as a UEFI payload.
+
+The EDKII SEC loads payload-efi as UEFI core.
+
+Then the payload-efi loads the EDKII UEFI shell.
 
 ## TODO
 
