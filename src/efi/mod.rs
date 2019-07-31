@@ -1124,80 +1124,38 @@ pub extern "win64" fn locate_protocol(guid: *mut Guid, registration: *mut c_void
 //
 // NOTE:
 // see https://github.com/rust-lang/rfcs/blob/master/text/2137-variadic.md
-// Current vararg support only "C".
-// "win64" is not supported.
-//
-// As such we cannot use below:
-// pub unsafe extern "C" fn install_multiple_protocol_interfaces(
-//    handle: *mut Handle,
-//    mut args: ...
-// ) -> Status;
-//
-// NOTE: Current EDKII has use case with 5 guid/interface pairs.
-// So we hardcode to support 8 pairs as maximum. It should be enought.
+// Current vararg support only "C". "win64" is not supported.
+// using x86_64-unknown-uefi will change calling convention.
 //
 #[cfg(not(test))]
-pub extern "win64" fn install_multiple_protocol_interfaces_real(
+#[no_mangle]
+pub unsafe extern "C" fn install_multiple_protocol_interfaces_real(
     handle: *mut Handle,
-    guid1: *mut Guid,
-    interface1: *mut c_void,
-    guid2: *mut Guid,
-    interface2: *mut c_void,
-    guid3: *mut Guid,
-    interface3: *mut c_void,
-    guid4: *mut Guid,
-    interface4: *mut c_void,
-    guid5: *mut Guid,
-    interface5: *mut c_void,
-    guid6: *mut Guid,
-    interface6: *mut c_void,
-    guid7: *mut Guid,
-    interface7: *mut c_void,
-    guid8: *mut Guid,
-    interface8: *mut c_void,
-    guid_null: *mut c_void,
+    mut args: ...
 ) -> Status {
     let mut count : usize = 0;
     let mut pair : [(*mut Guid, *mut c_void); 8] = [(core::ptr::null_mut(), core::ptr::null_mut()) ; 8];
 
-    if guid1 == core::ptr::null_mut() {
+    for index in 0..8 {
+      let guid : *mut Guid = args.arg();
+      let interface : *mut c_void = args.arg();
+      if guid != core::ptr::null_mut() {
+        pair[count] = (guid, interface);
+        count = count + 1;
+      } else {
+        break;
+      }
+    }
+    if count == 0 {
       crate::log!("EFI_STUB: install_multiple_protocol_interfaces_real - no GUID/Interface pair\n");
       return Status::INVALID_PARAMETER;
-    } else {
-      count = 1;
-      pair[0] = (guid1, interface1);
     }
-    if guid2 != core::ptr::null_mut() {
-      count = 2;
-      pair[1] = (guid2, interface2);
-    }
-    if guid3 != core::ptr::null_mut() {
-      count = 3;
-      pair[2] = (guid3, interface3);
-    }
-    if guid4 != core::ptr::null_mut() {
-      count = 4;
-      pair[3] = (guid4, interface4);
-    }
-    if guid5 != core::ptr::null_mut() {
-      count = 5;
-      pair[4] = (guid5, interface5);
-    }
-    if guid6 != core::ptr::null_mut() {
-      count = 6;
-      pair[5] = (guid6, interface6);
-    }
-    if guid7 != core::ptr::null_mut() {
-      count = 7;
-      pair[6] = (guid7, interface7);
-    }
-    if guid8 != core::ptr::null_mut() {
-      count = 8;
-      pair[7] = (guid8, interface8);
-    }
-    if guid_null != core::ptr::null_mut() {
-      crate::log!("EFI_STUB: install_multiple_protocol_interfaces_real - too many GUID/Interface pair\n");
-      return Status::UNSUPPORTED;
+    if count == 8 {
+      let guid_null : *mut Guid = args.arg();
+      if guid_null != core::ptr::null_mut() {
+        crate::log!("EFI_STUB: install_multiple_protocol_interfaces_real - too many GUID/Interface pair\n");
+        return Status::UNSUPPORTED;
+      }
     }
 
     crate::log!("EFI_STUB: install_multiple_protocol_interfaces_real:\n");
@@ -1223,25 +1181,10 @@ pub extern "win64" fn install_multiple_protocol_interfaces_real(
     status
 }
 
-pub extern "win64" fn uninstall_multiple_protocol_interfaces_real(
+#[cfg(not(test))]
+pub unsafe extern "C" fn uninstall_multiple_protocol_interfaces_real(
     handle: *mut Handle,
-    guid1: *mut Guid,
-    interface1: *mut c_void,
-    guid2: *mut Guid,
-    interface2: *mut c_void,
-    guid3: *mut Guid,
-    interface3: *mut c_void,
-    guid4: *mut Guid,
-    interface4: *mut c_void,
-    guid5: *mut Guid,
-    interface5: *mut c_void,
-    guid6: *mut Guid,
-    interface6: *mut c_void,
-    guid7: *mut Guid,
-    interface7: *mut c_void,
-    guid8: *mut Guid,
-    interface8: *mut c_void,
-    guid_null: *mut c_void,
+    mut args: ...
 ) -> Status {
     crate::log!("EFI_STUB: uninstall_multiple_protocol_interfaces_real - UNSUPPORTED\n");
     Status::UNSUPPORTED
