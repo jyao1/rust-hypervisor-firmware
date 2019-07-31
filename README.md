@@ -15,18 +15,18 @@ cargo install cargo-xbuild
 3) Compile the code
 
 ```
-cargo xbuild --release --target target.json
+cargo xbuild --release --target x86_64-unknown-uefi
 ```
 
 4) The result will be in:
 
-target/target/release/payload-efi
+target/x86_64-unknown-uefi/release/payload-efi.efi
 
 ## Running
 
 1) check out https://github.com/jyao1/edk2/tree/minovmf
 
-2) build MinOvmf64FwPkg.
+2) copy payload-efi.efi to MinOvmf64FwPkg, then build MinOvmf64FwPkg.
 
 ```
    build -p MinOvmf64FwPkg\MinOvmf64FwPkg.dsc -a IA32 -a X64 -t VS2015x86

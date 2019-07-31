@@ -90,3 +90,16 @@ pub extern "win64" fn _start(hob: *const c_void) -> ! {
 
     //i8042_reset();
 }
+
+#[cfg(not(test))]
+#[no_mangle]
+pub extern "win64" fn efi_main(hob: *const c_void) -> ! {
+
+    log!("Starting UEFI hob - {:p}\n", hob);
+
+    enable_sse2();
+
+    efi::enter_uefi(hob);
+
+    //i8042_reset();
+}
