@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![allow(unused)]
-
 use core::cell::RefCell;
 
 #[cfg(not(test))]
@@ -116,6 +114,21 @@ pub trait SectorRead {
     fn read(&self, sector: u64, data: &mut [u8]) -> Result<(), Error>;
 }
 
+pub trait SectorWrite {
+    /// Write a single sector (512 bytes) from the block device. `data` must be
+    /// exactly 512 bytes long.
+    fn write(&self, sector: u64, data: &mut [u8]) -> Result<(), Error>;
+    fn flush(&self) -> Result<(), Error>;
+}
+
+#[cfg(not(test))]
+#[derive(PartialEq, Copy, Clone)]
+enum RequestType {
+    Read = 0,
+    Write = 1,
+    Flush = 4,
+}
+
 #[cfg(not(test))]
 impl<'a> VirtioBlockDevice<'a> {
     pub fn new(transport: &'a mut VirtioTransport) -> VirtioBlockDevice<'a> {
@@ -160,8 +173,12 @@ impl<'a> VirtioBlockDevice<'a> {
             return Err(VirtioError::VirtioLegacyOnly);
         }
 
+        // Don't support any advanced features for now
+        let supported_features = VIRTIO_F_VERSION_1;
+
         // Report driver features
-        self.transport.set_features(device_features);
+        self.transport
+            .set_features(device_features & supported_features);
 
         self.transport.add_status(VIRTIO_STATUS_FEATURES_OK);
         if self.transport.get_status() & VIRTIO_STATUS_FEATURES_OK != VIRTIO_STATUS_FEATURES_OK {
@@ -206,12 +223,16 @@ impl<'a> VirtioBlockDevice<'a> {
         u64::from(self.transport.read_device_config(0))
             | u64::from(self.transport.read_device_config(4)) << 32
     }
-}
 
-#[cfg(not(test))]
-impl<'a> SectorRead for VirtioBlockDevice<'a> {
-    fn read(&self, sector: u64, data: &mut [u8]) -> Result<(), Error> {
-        assert_eq!(512, data.len());
+    fn request(
+        &self,
+        sector: u64,
+        data: Option<&mut [u8]>,
+        request: RequestType,
+    ) -> Result<(), Error> {
+        if request != RequestType::Flush {
+            assert_eq!(512, data.as_ref().unwrap().len());
+        }
 
         const VIRTQ_DESC_F_NEXT: u16 = 1;
         const VIRTQ_DESC_F_WRITE: u16 = 2;
@@ -221,7 +242,7 @@ impl<'a> SectorRead for VirtioBlockDevice<'a> {
         const VIRTIO_BLK_S_UNSUPP: u8 = 2;
 
         let header = BlockRequestHeader {
-            request: 0,
+            request: request as u32,
             reserved: 0,
             sector,
         };
@@ -231,9 +252,6 @@ impl<'a> SectorRead for VirtioBlockDevice<'a> {
         let mut state = self.state.borrow_mut();
 
         let next_head = state.next_head;
-        if next_head >= QUEUE_SIZE {
-          // BUGBUG: it causes system hang
-        }
         let mut d = &mut state.descriptors[next_head];
         let next_desc = (next_head + 1) % QUEUE_SIZE;
         d.addr = (&header as *const _) as u64;
@@ -243,9 +261,17 @@ impl<'a> SectorRead for VirtioBlockDevice<'a> {
 
         let mut d = &mut state.descriptors[next_desc];
         let next_desc = (next_desc + 1) % QUEUE_SIZE;
-        d.addr = data.as_ptr() as u64;
-        d.length = core::mem::size_of::<[u8; 512]>() as u32;
-        d.flags = VIRTQ_DESC_F_NEXT | VIRTQ_DESC_F_WRITE;
+        if request != RequestType::Flush {
+            d.addr = data.unwrap().as_ptr() as u64;
+            d.length = core::mem::size_of::<[u8; 512]>() as u32;
+        }
+
+        d.flags = VIRTQ_DESC_F_NEXT
+            | if request == RequestType::Read {
+                VIRTQ_DESC_F_WRITE
+            } else {
+                0
+            };
         d.next = next_desc as u16;
 
         let mut d = &mut state.descriptors[next_desc];
@@ -278,5 +304,23 @@ impl<'a> SectorRead for VirtioBlockDevice<'a> {
             VIRTIO_BLK_S_UNSUPP => Err(Error::BlockNotSupported),
             _ => Err(Error::BlockNotSupported),
         }
+    }
+}
+
+#[cfg(not(test))]
+impl<'a> SectorRead for VirtioBlockDevice<'a> {
+    fn read(&self, sector: u64, data: &mut [u8]) -> Result<(), Error> {
+        self.request(sector, Some(data), RequestType::Read)
+    }
+}
+
+#[cfg(not(test))]
+impl<'a> SectorWrite for VirtioBlockDevice<'a> {
+    fn write(&self, sector: u64, data: &mut [u8]) -> Result<(), Error> {
+        self.request(sector, Some(data), RequestType::Write)
+    }
+
+    fn flush(&self) -> Result<(), Error> {
+        self.request(0, None, RequestType::Flush)
     }
 }
