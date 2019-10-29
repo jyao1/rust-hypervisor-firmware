@@ -279,14 +279,14 @@ impl<'a> BlockWrapper<'a> {
 pub fn populate_block_wrappers(
     wrappers: &mut BlockWrappers,
     block: *const crate::block::VirtioBlockDevice,
-) -> u32 {
+) -> Option<u32> {
     let mut parts: [crate::part::PartitionEntry; 16] = unsafe { core::mem::zeroed() };
 
     log!("populate_block_wrappers...\n");
     wrappers.wrappers[0] =
         BlockWrapper::new(unsafe { core::mem::transmute(block) }, 0, 0, 0, [0; 16]);
 
-    let mut efi_part_id = 0;
+    let mut efi_part_id = Some(0);
     let part_count = crate::part::get_partitions(unsafe { &*block }, &mut parts).unwrap();
     for i in 0..part_count {
         let p = parts[i as usize];
@@ -300,11 +300,11 @@ pub fn populate_block_wrappers(
         log!("par {}\n", i);
         if p.is_efi_partition() {
             log!("  is_efi_partition\n");
-            efi_part_id = i + 1;
+            efi_part_id = Some(i + 1);
         }
     }
     wrappers.count = part_count as usize + 1;
     log!("wrappers.count {}\n", wrappers.count);
-    log!("efi_part_id {}\n", efi_part_id);
+    log!("efi_part_id {:?}\n", efi_part_id);
     efi_part_id
 }

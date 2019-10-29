@@ -190,7 +190,7 @@ pub fn initialize_fs() {
 
     log!("Filesystem ready\n");
 
-  if false {
+
     let efi_part_id = unsafe { crate::efi::block::populate_block_wrappers(&mut crate::efi::BLOCK_WRAPPERS, &device) };
 
     let mut wrapped_fs = file::FileSystemWrapper::new(&f, efi_part_id);
@@ -206,6 +206,5 @@ pub fn initialize_fs() {
       return ;
     }
     log!("Filesystem installed\n");
-  }
 }
  

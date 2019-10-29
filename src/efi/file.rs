@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![allow(unused)]
-
 use core::ffi::c_void;
 
 use r_efi::efi::{AllocateType, Char16, Guid, MemoryType, Status};
@@ -216,7 +214,7 @@ pub struct FileSystemWrapper<'a> {
     hw: super::HandleWrapper,
     fs: &'a crate::fat::Filesystem<'a>,
     pub proto: SimpleFileSystemProtocol,
-    pub block_part_id: u32,
+    pub block_part_id: Option<u32>,
 }
 
 #[cfg(not(test))]
@@ -255,7 +253,10 @@ impl<'a> FileSystemWrapper<'a> {
         }
     }
 
-    pub fn new(fs: &'a crate::fat::Filesystem, block_part_id: u32) -> FileSystemWrapper<'a> {
+    pub fn new(
+        fs: &'a crate::fat::Filesystem,
+        block_part_id: Option<u32>,
+    ) -> FileSystemWrapper<'a> {
         FileSystemWrapper {
             hw: super::HandleWrapper {
                 handle_type: super::HandleType::FileSystem,
