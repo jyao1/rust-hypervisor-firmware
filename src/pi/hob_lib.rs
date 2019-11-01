@@ -137,7 +137,7 @@ pub fn relocate_hob(hob: *const c_void) -> *mut c_void {
   let (status, new_hob_address) = ALLOCATOR.lock().allocate_pages(
             AllocateType::AllocateAnyPages,
             MemoryType::BootServicesData,
-            hob_total_size as u64 / PAGE_SIZE,
+            (hob_total_size + PAGE_SIZE as usize - 1) as u64 / PAGE_SIZE,
             0,
             );
   if status != Status::SUCCESS {

@@ -48,6 +48,7 @@ mod virtio;
 #[panic_handler]
 #[allow(clippy::empty_loop)]
 fn panic(_info: &PanicInfo) -> ! {
+    log!("panic ... {:?}\n", _info);
     loop {}
 }
 
