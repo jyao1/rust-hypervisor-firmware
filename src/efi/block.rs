@@ -34,7 +34,7 @@ pub struct HardDiskDevicePathProtocol {
 
 #[cfg(not(test))]
 #[repr(C)]
-struct BlockIoMedia {
+pub struct BlockIoMedia {
     media_id: u32,
     removable_media: bool,
     media_present: bool,
@@ -136,7 +136,7 @@ pub struct ControllerDevicePathProtocol {
 pub struct BlockWrapper<'a> {
     hw: super::HandleWrapper,
     block: *const crate::block::VirtioBlockDevice<'a>,
-    media: BlockIoMedia,
+    pub media: BlockIoMedia,
     pub proto: BlockIoProtocol,
     // The ordering of these paths are very important, along with the C
     // representation as the device path "flows" from the first.
@@ -307,4 +307,12 @@ pub fn populate_block_wrappers(
     log!("wrappers.count {}\n", wrappers.count);
     log!("efi_part_id {:?}\n", efi_part_id);
     efi_part_id
+}
+
+#[cfg(not(test))]
+#[allow(clippy::transmute_ptr_to_ptr)]
+pub fn get_block_io_media_str(wrappers: &mut BlockWrappers, index: usize) -> (*mut c_void) {
+    unsafe{let ref_1: &mut BlockIoMedia = &mut (*wrappers.wrappers[index]).media;
+    return ref_1 as *mut BlockIoMedia as *mut c_void;
+    }
 }
