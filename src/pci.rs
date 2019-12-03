@@ -165,8 +165,8 @@ pub fn search_bus(target_vendor_id: u16, target_device_id: u16) -> Option<PciDev
 #[derive(Default)]
 pub struct PciDevice {
     bus: u8,
-    device: u8,
-    func: u8,
+    pub device: u8,
+    pub func: u8,
     bars: [PciBar; 6],
     vendor_id: u16,
     device_id: u16,

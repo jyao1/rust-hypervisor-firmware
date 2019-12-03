@@ -18,6 +18,7 @@ use r_efi::efi::{AllocateType, Char16, Guid, MemoryType, Status};
 use r_efi::protocols::device_path::Protocol as DevicePathProtocol;
 use r_efi::protocols::file::Protocol as FileProtocol;
 use r_efi::protocols::simple_file_system::Protocol as SimpleFileSystemProtocol;
+use crate::efi::fat::Error as FatError;
 
 #[cfg(not(test))]
 #[repr(C)]
@@ -31,6 +32,7 @@ pub extern "win64" fn filesystem_open_volume(
     fs_proto: *mut SimpleFileSystemProtocol,
     file: *mut *mut FileProtocol,
 ) -> Status {
+    log!("EFI-STUB: open_volume start\n");
     let wrapper = container_of!(fs_proto, FileSystemWrapper, proto);
     let wrapper = unsafe { &*wrapper };
 
@@ -38,8 +40,10 @@ pub extern "win64" fn filesystem_open_volume(
         unsafe {
             *file = &mut (*fw).proto;
         }
+        log!("EFI-STUB: open_volume\n");
         Status::SUCCESS
     } else {
+        log!("EFI-STUB: open_volume failed\n");
         Status::DEVICE_ERROR
     }
 }
@@ -54,7 +58,6 @@ pub extern "win64" fn open(
 ) -> Status {
     let wrapper = container_of!(file_in, FileWrapper, proto);
     let wrapper = unsafe { &*wrapper };
-
     if !wrapper.root {
         log!("Attempt to open file from non-root file is unsupported\n");
         return Status::UNSUPPORTED;
@@ -63,21 +66,31 @@ pub extern "win64" fn open(
     let mut path = [0; 256];
     crate::common::ucs2_to_ascii(path_in, &mut path[0..255]);
     let path = unsafe { core::str::from_utf8_unchecked(&path) };
-
+    log!("EFI-STUB: file protocol open function start {:?}\n", path);
     match wrapper.fs.open(path) {
         Ok(f) => {
+            log!("EFI-STUB: file protocol open function ok\n");
             let fs_wrapper = unsafe { &(*wrapper.fs_wrapper) };
             if let Some(file_out_wrapper) = fs_wrapper.create_file(false) {
                 unsafe {
                     (*file_out_wrapper).file = f;
                     *file_out = &mut (*file_out_wrapper).proto;
                 }
+                log!("EFI-STUB: file.rs open successful\n");
                 Status::SUCCESS
             } else {
+                log!("EFI-STUB: file.rs open failed device_error\n");
                 Status::DEVICE_ERROR
             }
-        }
-        Err(_) => Status::DEVICE_ERROR,
+        },
+        Err(FatError::NotFound) => {
+            log!("EFI-STUB: file.rs open failed not found\n");
+            Status::NOT_FOUND
+        },
+        Err(_) => {
+            log!("EFI-STUB: file.rs open failed device_error\n");
+            Status::DEVICE_ERROR
+        },
     }
 }
 
@@ -91,6 +104,7 @@ pub extern "win64" fn close(proto: *mut FileProtocol) -> Status {
 
 #[cfg(not(test))]
 pub extern "win64" fn delete(_: *mut FileProtocol) -> Status {
+    crate::log!("delete unsupported");
     Status::UNSUPPORTED
 }
 
@@ -129,16 +143,19 @@ pub extern "win64" fn read(file: *mut FileProtocol, size: *mut usize, buf: *mut 
 
 #[cfg(not(test))]
 pub extern "win64" fn write(_: *mut FileProtocol, _: *mut usize, _: *mut c_void) -> Status {
+    crate::log!("write unsupported");
     Status::UNSUPPORTED
 }
 
 #[cfg(not(test))]
 pub extern "win64" fn get_position(_: *mut FileProtocol, _: *mut u64) -> Status {
+    crate::log!("get_position unsupported");
     Status::UNSUPPORTED
 }
 
 #[cfg(not(test))]
 pub extern "win64" fn set_position(_: *mut FileProtocol, _: u64) -> Status {
+    crate::log!("set_position unsupported");
     Status::UNSUPPORTED
 }
 
@@ -180,6 +197,7 @@ pub extern "win64" fn get_info(
             Status::SUCCESS
         }
     } else {
+        crate::log!("get_info unsupported");
         Status::UNSUPPORTED
     }
 }
@@ -191,11 +209,13 @@ pub extern "win64" fn set_info(
     _: usize,
     _: *mut c_void,
 ) -> Status {
+    crate::log!("set_info unsupported");
     Status::UNSUPPORTED
 }
 
 #[cfg(not(test))]
 pub extern "win64" fn flush(_: *mut FileProtocol) -> Status {
+    crate::log!("flush unsupported");
     Status::UNSUPPORTED
 }
 

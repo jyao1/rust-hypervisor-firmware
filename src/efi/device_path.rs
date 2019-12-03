@@ -26,6 +26,9 @@ use core::mem::transmute;
 use core::mem::size_of;
 
 use r_efi::protocols::device_path::Protocol as DevicePathProtocol;
+use r_efi::protocols::device_path::{
+  TYPE_END
+};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -88,4 +91,39 @@ pub fn get_device_path_size (
       device_path_node = get_next_device_path_node (device_path_node);
     }
     size
+}
+
+pub fn is_device_path_end_type(device_path: *mut DevicePathProtocol) -> bool {
+  get_device_path_node_type(device_path) == TYPE_END
+}
+
+pub fn is_device_path_end(device_path: *mut DevicePathProtocol) -> bool {
+  is_device_path_end_type(device_path) && (get_device_path_node_sub_type(device_path) == 0xff)
+}
+
+pub fn is_device_path_end_instance(device_path: *mut DevicePathProtocol) -> bool {
+  is_device_path_end_type(device_path) && (get_device_path_node_sub_type(device_path) == 0x01)
+}
+
+pub fn compare_device_path(
+      device_path1: *mut DevicePathProtocol,
+      device_path2: *mut DevicePathProtocol,
+      size: usize
+    ) -> bool
+{
+  let mut dp1: *mut u8 = device_path1 as *mut u8;
+  let mut dp2: *mut u8 = device_path2 as *mut u8;
+
+  let mut d1: u8 = 0;
+  let mut d2: u8 = 0;
+  for i in 0 .. size {
+    unsafe {
+      d1 = *((dp1 as usize + i as usize) as *mut u8);
+      d2 = *((dp2 as usize + i as usize) as *mut u8);
+    }
+    if d1 != d2 {
+      return false;
+    }
+  }
+  true
 }

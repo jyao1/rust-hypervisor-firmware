@@ -230,8 +230,6 @@ pub fn initialize_fs() {
 
     let mut wrapped_fs = file::FileSystemWrapper::new(&f, efi_part_id);
 
-    let media_ptr = unsafe{  crate::efi::block::get_block_io_media_str(&mut crate::efi::BLOCK_WRAPPERS, efi_part_id.unwrap() as usize)};
-
     let mut handle : Handle = core::ptr::null_mut();
     let status = crate::efi::install_protocol_interface (
                        &mut handle as *mut Handle,
@@ -239,45 +237,36 @@ pub fn initialize_fs() {
                        InterfaceType::NativeInterface,
                        &mut wrapped_fs.proto as *mut SimpleFileSystemProtocol as *mut c_void
                        );
-    log!("simple_file_system protocol, handle: {:?}\n", handle);
-
-    let status = crate::efi::install_protocol_interface(
-        &mut handle as *mut Handle,
-        &mut crate::efi::BLOCK_PROTOCOL_GUID as *mut Guid,
-        InterfaceType::NativeInterface,
-        media_ptr as *mut c_void,
-    );
-
     if status != Status::SUCCESS {
       log!("Error");
       return;
     }
 
     let mut file_system_path = HardDriveDevicePath {
-        file_system_path_node: HardDriveDevicePathNode {
-            header: DevicePathProtocol {
-            r#type: r_efi::protocols::device_path::TYPE_MEDIA,
-            sub_type: r_efi::protocols::device_path::Hardware::SUBTYPE_PCI,
-            length: [42, 0],
-          },
-          partition_number: efi_part_id.unwrap() as u32,
-          partition_start: partition_start as u64,
-          partition_size: partition_end - partition_start as u64,
-          partition_signature: [0x5452_4150_2049_4645u64,0],
-          partition_format: 0x2,
-          partition_type: 0x2,
+      file_system_path_node: HardDriveDevicePathNode {
+          header: DevicePathProtocol {
+          r#type: r_efi::protocols::device_path::TYPE_MEDIA,
+          sub_type: r_efi::protocols::device_path::Hardware::SUBTYPE_PCI,
+          length: [42, 0],
         },
-        end: r_efi::protocols::device_path::End {
-            header: DevicePathProtocol {
-            r#type: r_efi::protocols::device_path::TYPE_END,
-            sub_type: r_efi::protocols::device_path::End::SUBTYPE_ENTIRE,
-            length: [4, 0],
-          },
+        partition_number: efi_part_id.unwrap() as u32,
+        partition_start: partition_start as u64,
+        partition_size: partition_end - partition_start as u64,
+        partition_signature: [0x5452_4150_2049_4645u64,0],
+        partition_format: 0x2 as u8,
+        partition_type: 0x2 as u8,
+      },
+      end: r_efi::protocols::device_path::End {
+          header: DevicePathProtocol {
+          r#type: r_efi::protocols::device_path::TYPE_END,
+          sub_type: r_efi::protocols::device_path::End::SUBTYPE_ENTIRE,
+          length: [4, 0],
         },
+      },
     };
 
     let mut device_path_buffer: *mut core::ffi::c_void = dup_device_path(&mut file_system_path.file_system_path_node.header as *mut DevicePathProtocol as *mut c_void);
-    log!("device_path_buffer: {:?}\n", device_path_buffer);
+    log!("device_path_buffer address: {:?}, device_path: {:?}\n", device_path_buffer, unsafe{*(device_path_buffer as *mut DevicePathProtocol)});
     let status = crate::efi::install_protocol_interface (
             &mut handle,
             &mut r_efi::protocols::device_path::PROTOCOL_GUID as *mut Guid,
@@ -291,4 +280,3 @@ pub fn initialize_fs() {
     }
     log!("Filesystem installed\n");
 }
- 

@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![allow(unused)]
-
 use crate::block::SectorRead;
 
 #[repr(packed)]
@@ -92,7 +90,7 @@ enum FatType {
 }
 
 pub struct Filesystem<'a> {
-    device: &'a SectorRead,
+    device: &'a dyn SectorRead,
     start: u64,
     last: u64,
     bytes_per_sector: u32,
@@ -376,7 +374,7 @@ fn compare_name(name: &str, de: &DirectoryEntry) -> bool {
 }
 
 impl<'a> Filesystem<'a> {
-    pub fn new(device: &'a SectorRead, start: u64, last: u64) -> Filesystem {
+    pub fn new(device: &'a dyn SectorRead, start: u64, last: u64) -> Filesystem {
         Filesystem {
             device,
             start,
@@ -398,13 +396,17 @@ impl<'a> Filesystem<'a> {
     }
 
     pub fn init(&mut self) -> Result<(), Error> {
+        crate::log!("EFI_STUB: filesystem init start\n");
         const FAT12_MAX: u32 = 0xff5;
         const FAT16_MAX: u32 = 0xfff5;
 
         let mut data: [u8; 512] = [0; 512];
         match self.read(0, &mut data) {
             Ok(_) => {}
-            Err(_) => return Err(Error::BlockError),
+            Err(_) => {
+                crate::log!("EFI_STUB: filesystem read error\n");
+                return Err(Error::BlockError)
+            },
         };
 
         let h = unsafe { &*(data.as_ptr() as *const Header) };
@@ -428,6 +430,7 @@ impl<'a> Filesystem<'a> {
         } else {
             FatType::FAT32
         };
+        crate::log!("EFI_STUB: filesystem fat type: {:?}\n", self.fat_type);
 
         if self.fat_type == FatType::FAT32 {
             let h32 = unsafe { &*(data.as_ptr() as *const Fat32Header) };
@@ -524,7 +527,10 @@ impl<'a> Filesystem<'a> {
                 }
             }
 
-            _ => Err(Error::Unsupported),
+            _ => {
+                crate::log!("next_cluster unsupported error!\n");
+                Err(Error::Unsupported)
+            },
         }
     }
 
@@ -549,7 +555,10 @@ impl<'a> Filesystem<'a> {
                 sector: 0,
                 offset: 0,
             }),
-            _ => Err(Error::Unsupported),
+            _ => {
+                crate::log!("root unsupported error!\n");
+                Err(Error::Unsupported)
+            },
         }
     }
 
@@ -575,10 +584,11 @@ impl<'a> Filesystem<'a> {
 
     pub fn open(&self, path: &str) -> Result<File, Error> {
         assert_eq!(path.find('/').or_else(|| path.find('\\')), Some(0));
-
+        crate::log!("EFI_STUB - open path is {:?}\n", path);
         let mut residual = path;
 
         let mut current_dir = self.root().unwrap();
+        crate::log!("EFI_STUB - open - unwrap\n");
         loop {
             // sub is the directory or file name
             // residual is what is left
@@ -591,18 +601,23 @@ impl<'a> Filesystem<'a> {
                     // +1 due to above find working on substring
                     let sub = &residual[1..=*x];
                     residual = &residual[(*x + 1)..];
+                    crate::log!("EFI_STUB - open sub is {:?}, residual is: {:?}\n", sub, residual);
                     sub
                 }
             };
 
             if sub.is_empty() {
+                crate::log!("EFI_STUB - open - not found\n");
                 return Err(Error::NotFound);
             }
 
             loop {
                 match current_dir.next_entry() {
                     Err(Error::EndOfFile) => return Err(Error::NotFound),
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        crate::log!("EFI_STUB - open - error\n");
+                        return Err(e);
+                    },
                     Ok(de) => {
                         if compare_name(sub, &de) {
                             match de.file_type {

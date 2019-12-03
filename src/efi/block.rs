@@ -76,6 +76,7 @@ pub struct BlockIoProtocol {
 
 #[cfg(not(test))]
 pub extern "win64" fn reset(_: *mut BlockIoProtocol, _: bool) -> Status {
+    crate::log!("reset unsupported");
     Status::UNSUPPORTED
 }
 
@@ -116,11 +117,13 @@ pub extern "win64" fn write_blocks(
     _: usize,
     _: *mut c_void,
 ) -> Status {
+    crate::log!("write_blocks unsupported");
     Status::UNSUPPORTED
 }
 
 #[cfg(not(test))]
 pub extern "win64" fn flush_blocks(_: *mut BlockIoProtocol) -> Status {
+    crate::log!("flush_blocks unsupported");
     Status::UNSUPPORTED
 }
 
