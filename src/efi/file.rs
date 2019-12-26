@@ -64,9 +64,11 @@ pub extern "win64" fn open(
     }
 
     let mut path = [0; 256];
-    crate::common::ucs2_to_ascii(path_in, &mut path[0..255]);
+    let length = crate::common::ucs2_as_ascii_length(path_in);
+    crate::common::ucs2_to_ascii(path_in, &mut path);
     let path = unsafe { core::str::from_utf8_unchecked(&path) };
-    log!("EFI-STUB: file protocol open function start {:?}\n", path);
+    let path = &path[0..length] as &str;
+    log!("EFI-STUB: file protocol open function start {}\n", path);
     match wrapper.fs.open(path) {
         Ok(f) => {
             log!("EFI-STUB: file protocol open function ok\n");
@@ -84,7 +86,7 @@ pub extern "win64" fn open(
             }
         },
         Err(FatError::NotFound) => {
-            log!("EFI-STUB: file.rs open failed not found\n");
+            log!("EFI-STUB: open failed not found {:?}\n", path);
             Status::NOT_FOUND
         },
         Err(_) => {
