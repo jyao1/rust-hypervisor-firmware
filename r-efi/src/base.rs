@@ -122,6 +122,8 @@ compile_error!("The target architecture is not supported.");
 #[cfg(not(any(target_endian = "little")))]
 compile_error!("The target endianness is not supported.");
 
+use core::fmt;
+
 // eficall_abi!()
 //
 // This macro is the architecture-dependent implementation of eficall!(). See the documentation of
@@ -409,7 +411,7 @@ pub type ImageEntryPoint = fn(Handle, *mut crate::system::SystemTable) -> Status
 /// The individual fields are encoded as little-endian. Accessors are provided for the Guid
 /// structure allowing access to these fields in native endian byte order.
 #[repr(C, align(8))]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Guid {
     time_low: [u8; 4],
     time_mid: [u8; 2],
@@ -417,6 +419,24 @@ pub struct Guid {
     clk_seq_hi_res: u8,
     clk_seq_low: u8,
     node: [u8; 6],
+}
+
+impl fmt::Debug for Guid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let guid_data = self.as_fields() ;
+        write!(f, "{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        guid_data.0,
+        guid_data.1,
+        guid_data.2,
+        guid_data.3,
+        guid_data.4,
+        guid_data.5[0],
+        guid_data.5[1],
+        guid_data.5[2],
+        guid_data.5[3],
+        guid_data.5[4],
+        guid_data.5[5])
+    }
 }
 
 impl Boolean {
