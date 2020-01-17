@@ -36,7 +36,7 @@ struct Allocation {
     descriptor: MemoryDescriptor,
 }
 
-const MAX_ALLOCATIONS: usize = 512;
+const MAX_ALLOCATIONS: usize = 32768;
 
 #[derive(Clone)]
 pub struct Allocator {
@@ -104,6 +104,7 @@ impl Allocator {
         let next = self.find_free_allocation();
 
         if next == MAX_ALLOCATIONS {
+            //log!("{}:{} out of resource\n", file!(), line!());
             return Status::OUT_OF_RESOURCES;
         }
 
@@ -188,6 +189,7 @@ impl Allocator {
     fn split_allocation(&mut self, orig: usize, pages: u64) -> Option<usize> {
         let new = self.find_free_allocation();
         if new == MAX_ALLOCATIONS {
+            log!("{}:{} out of resource\n", file!(), line!());
             return None;
         }
 
@@ -221,6 +223,7 @@ impl Allocator {
         let dest = self.find_free_memory(allocate_type, page_count, address);
 
         if dest == None {
+            log!("{}:{} out of resource\n", file!(), line!());
             return (Status::OUT_OF_RESOURCES, 0);
         }
 
@@ -246,6 +249,7 @@ impl Allocator {
                 if self.allocations[dest].descriptor.physical_start == address {
                     let split = self.split_allocation(dest, page_count);
                     if split == None {
+                        log!("{}:{} out of resource\n", file!(), line!());
                         return (Status::OUT_OF_RESOURCES, 0);
                     }
                     assigned = dest
@@ -255,6 +259,7 @@ impl Allocator {
                         (address - self.allocations[dest].descriptor.physical_start) / PAGE_SIZE;
                     let split = self.split_allocation(dest, pages);
                     if split == None {
+                        log!("{}:{} out of resource\n", file!(), line!());
                         return (Status::OUT_OF_RESOURCES, 0);
                     }
                     let split = split.unwrap();
@@ -263,6 +268,7 @@ impl Allocator {
                     if self.allocations[split].descriptor.number_of_pages > page_count {
                         let second_split = self.split_allocation(split, page_count);
                         if second_split == None {
+                            log!("{}:{} out of resource\n", file!(), line!());
                             return (Status::OUT_OF_RESOURCES, 0);
                         }
                     }
@@ -274,6 +280,7 @@ impl Allocator {
                 // With the more general allocation we always put at the start of the range
                 let split = self.split_allocation(dest, page_count);
                 if split == None {
+                    log!("{}:{} out of resource\n", file!(), line!());
                     return (Status::OUT_OF_RESOURCES, 0);
                 }
 
@@ -302,6 +309,7 @@ impl Allocator {
             let next_allocation = self.allocations[cur.unwrap()].next_allocation;
 
             if next_allocation.is_none() {
+            //    log!("{}:{} out of resource\n", file!(), line!());
                 return;
             }
 
