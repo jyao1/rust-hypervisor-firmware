@@ -645,6 +645,7 @@ pub extern "win64" fn get_next_high_mono_count(_: *mut u32) -> Status {
 
 #[cfg(not(test))]
 pub extern "win64" fn reset_system(_: ResetType, _: Status, _: usize, _: *mut c_void) {
+    crate::log!("EFI_STUB: reset_system.\n");
     crate::i8042_reset();
 }
 
@@ -725,6 +726,7 @@ pub extern "win64" fn get_memory_map(
     descriptor_size: *mut usize,
     descriptor_version: *mut u32,
 ) -> Status {
+    log!("EFI_STUB - get_memory_map\n");
     let count = ALLOCATOR.lock().get_descriptor_count();
     let map_size = core::mem::size_of::<MemoryDescriptor>() * count;
     if unsafe { *memory_map_size } < map_size {
@@ -785,7 +787,6 @@ pub extern "win64" fn create_event(
     notify_context: *mut c_void,
     event: *mut Event,
 ) -> Status {
-    crate::log!("EFI_STUB: create_event - type:0x{:x} tpl:0x{:x}\n", r#type, notify_tpl as usize);
 
     let (status, new_event) = EVENT.lock().create_event(
             r#type,
@@ -793,7 +794,7 @@ pub extern "win64" fn create_event(
             notify_function,
             notify_context
             );
-    log!("status - {:?}\n", status);
+    crate::log!("EFI_STUB: create_event - type:0x{:x} tpl:0x{:x} - status: {:?}\n", r#type, notify_tpl as usize, status);
     if status == Status::SUCCESS {
         unsafe {
             *event = new_event;
@@ -827,6 +828,7 @@ pub extern "win64" fn close_event(_: Event) -> Status {
 
 #[cfg(not(test))]
 pub extern "win64" fn check_event(_: Event) -> Status {
+    crate::log!("EFI_STUB: check_event - UNSUPPORTED\n");
     Status::UNSUPPORTED
 }
 
@@ -837,16 +839,13 @@ pub extern "win64" fn install_protocol_interface(
     interface_type: InterfaceType,
     interface: *mut c_void,
 ) -> Status {
-    crate::log!("EFI_STUB: install_protocol_interface - ");
-    print_guid (guid);
-    crate::log!(" , handle: {:?}, interface: {:?}\n", unsafe{*handle}, interface);
 
     let (status, new_handle) = HANDLE_DATABASE.lock().install_protocol(
                 unsafe {*handle},
                 guid,
                 interface,
             );
-    log!("status - {:?}\n", status);
+    crate::log!("EFI_STUB: install_protocol_interface: {:?}, handle: {:?}, interface: {:?} - new_handle: {:?} status: {:?}\n", unsafe{*guid}, unsafe{*handle}, interface, new_handle, status);
     if status == Status::SUCCESS {
         unsafe {
             *handle = new_handle;
@@ -888,15 +887,11 @@ pub extern "win64" fn handle_protocol(
     }
 
     let (status, interface) = HANDLE_DATABASE.lock().handle_protocol(handle, guid);
+    crate::log!("EFI_STUB - handle_protocol: {:?}, handle: {:?} - status {:?}, interface: {:?}\n", unsafe{*guid}, handle, status, interface);
     if status == Status::SUCCESS {
         unsafe {
             *out = interface;
         }
-    } else {
-      crate::log!("EFI_STUB: handle_protocol - ");
-      print_guid (guid);
-      crate::log!("\n");
-      log!("status - {:?}\n", status);
     }
     status
 }
@@ -924,10 +919,6 @@ pub extern "win64" fn locate_handle(
         return Status::INVALID_PARAMETER;
     }
 
-    // crate::log!("EFI_STUB: locate_handle - ");
-    // print_guid (guid);
-    // crate::log!("\n");
-
     if locate_search_type as u32 != LocateSearchType::ByProtocol as u32 {
       log!("locate_search_type - {}\n", locate_search_type as u32);
       return Status::UNSUPPORTED;
@@ -939,10 +930,12 @@ pub extern "win64" fn locate_handle(
 
     let input_buffer_size = unsafe { *buffer_size };
     let (status, final_buffer_size) = HANDLE_DATABASE.lock().locate_handle(guid, input_buffer_size, buffer);
+    crate::log!("EFI_STUB: locate_handle - guid: {:?}, buffer_size: {:?} - status: {:?}, buffer_size: {:?}\n", unsafe{*guid}, unsafe{*buffer_size}, status, final_buffer_size);
     match status {
       Status::SUCCESS => {},
       Status::BUFFER_TOO_SMALL => {},
-      _ => {return status;}
+      Status::NOT_FOUND => {},
+      _ => {crate::log!("EFI_STUB: locate_handle error\n");return status;}
     }
 
     unsafe { *buffer_size = final_buffer_size; }
@@ -953,10 +946,8 @@ pub extern "win64" fn locate_handle(
 #[cfg(not(test))]
 pub extern "win64" fn locate_device_path(protocol: *mut Guid, device_path: *mut *mut c_void, device: *mut Handle) -> Status {
 
-    crate::log!("EFI_STUB: locate_device_path protocol: ");
-    print_guid(protocol);
     let source_path: *mut DevicePathProtocol = unsafe{*device_path as *mut DevicePathProtocol};
-    crate::log!(" devicePath address: {:?} value {:?}\n", source_path, unsafe{*source_path});
+    crate::log!("EFI_STUB: locate_device_path protocol: {:?}, devicePath address: {:?} value {:?}\n", unsafe{*protocol}, source_path, unsafe{*source_path});
 
     if device_path == core::ptr::null_mut() {
         crate::log!("EFI_STUB: locate_device_path: device_path is NULL\n");
@@ -1062,6 +1053,7 @@ pub extern "win64" fn load_image(
         source_size,
     );
 
+    crate::log!("EFI_STUB: load_image done handle {:?} status {:?}\n", new_image_handle, status);
     if status == Status::SUCCESS {
         if image_handle != core::ptr::null_mut() {
           unsafe { *image_handle = new_image_handle };
@@ -1077,7 +1069,7 @@ pub extern "win64" fn start_image(
     exit_data_size: *mut usize,
     exit_data: *mut *mut Char16
 ) -> Status {
-    crate::log!("EFI_STUB: start_image\n");
+    crate::log!("EFI_STUB: start_image, handle: {:?}\n", image_handle);
 
     let (status, new_exit_data_size, new_exit_data) = IMAGE.lock().start_image(image_handle);
 
@@ -1117,6 +1109,7 @@ pub extern "win64" fn get_next_monotonic_count(_: *mut u64) -> Status {
 
 #[cfg(not(test))]
 pub extern "win64" fn stall(_: usize) -> Status {
+    crate::log!("EFI_STUB: stall - called\n");
     Status::SUCCESS
 }
 
@@ -1157,18 +1150,14 @@ pub extern "win64" fn open_protocol(
         return Status::INVALID_PARAMETER;
     }
 
-    crate::log!("EFI_STUB: open_protocol - ");
-    print_guid (guid);
-    crate::log!("\n");
-
-    log!("attributes - {}\n", attributes);
-
     if attributes != OPEN_PROTOCOL_GET_PROTOCOL {
-      return Status::UNSUPPORTED;
+        crate::log!("EFI_STUB - open_protocol: attribute not support\n");
+        return Status::UNSUPPORTED;
     }
 
     unsafe {*out_interface = core::ptr::null_mut();}
     let (status, interface) = HANDLE_DATABASE.lock().handle_protocol (handle, guid);
+    crate::log!("EFI_STUB - open_protocol: {:?}, handle: {:?}, attributes: {} - return - status: {:?}, interface {:?}\n", unsafe{*guid}, handle, attributes, status, interface);
     if status == Status::SUCCESS {
       unsafe {*out_interface = interface;}
     }
@@ -1251,10 +1240,7 @@ pub extern "win64" fn locate_protocol(guid: *mut Guid, registration: *mut c_void
     if status == Status::SUCCESS {
       unsafe {*interface = new_interface; }
     } else {
-      crate::log!("EFI_STUB: locate_protocol - ");
-      print_guid (guid);
-      crate::log!("\n");
-      log!("status - {:?}\n", status);
+      crate::log!("EFI_STUB - locate_protocol: {:?} failed, status: {:?}\n", unsafe{*guid}, status);
     }
 
     status
@@ -1679,7 +1665,7 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
         device = crate::block::VirtioBlockDevice::new(&mut pci_transport);
         match device.init() {
             Err(_) => {
-                log!("Error configuring block device\n");
+                log!("Error configuring block device search\n");
             }
             Ok(_) => log!(
                 "Virtio block device configured. Capacity: {} sectors\n",
