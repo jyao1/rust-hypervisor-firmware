@@ -395,7 +395,8 @@ pub fn peloader_load_image (
     source_buffer: *mut c_void,
     source_size: usize
     ) -> (usize) {
-    log!("peloader_load_image ...\n");
+    log!("EFI_STUB - peloader_load_image ...\n");
+    pe_dumper(source_buffer,source_size);
     let source_dos_header = unsafe {transmute::<*mut c_void, &mut ImageDosHeader>(source_buffer)};
     let pecoff_header_offset = source_dos_header.e_lfanew;
 
@@ -445,5 +446,46 @@ pub fn peloader_load_image (
       Err(_) => {return (0);},
     }
 
+    log!("dest_buffer: {:?} nt_header->address_of_entry_point: {}\n", dest_buffer, nt_header.optional_header.address_of_entry_point);
     (dest_buffer as usize + nt_header.optional_header.address_of_entry_point as usize)
+}
+
+pub fn pe_dumper(
+  buffer: *mut c_void, size: usize){
+    pe_dumper_header(buffer);
+
+}
+
+pub fn pe_dumper_header(
+  start_address: *mut c_void){
+    let source_dos_header = unsafe {transmute::<*mut c_void, &mut ImageDosHeader>(start_address)};
+    log!("DOS Header\n");
+    log!("\t Magic Number:\t\t\t\t{:x}", source_dos_header.e_magic);
+    log!("\t PE header offset:\t\t\t\t{:x}", source_dos_header.e_lfanew);
+
+    let pecoff_header_offset = source_dos_header.e_lfanew;
+    let nt_header: *mut ImageNtHeader64 = unsafe {transmute::<usize, &mut ImageNtHeader64>(start_address as usize + pecoff_header_offset as usize)};
+    let nt_header_ref: ImageNtHeader64 = unsafe{*nt_header};
+    log!("\nPE Signature:\n \t\t\t\t {:x}", nt_header_ref.signature);
+    log!("\nFile Type: ");
+    log!("\nFILE HEADER VALUES");
+    log!("\n\t\t\t\t{:x} \t Machine ", nt_header_ref.file_header.machine);
+    log!("\n\t\t\t\t{:x} \t NumberOfSections ", nt_header_ref.file_header.number_of_sections);
+    log!("\n\t\t\t\t{:x} \t TimeDateStamp ", nt_header_ref.file_header.time_date_stamp);
+    log!("\n\t\t\t\t{:x} \t PointerToSymbolTable ", nt_header_ref.file_header.pointer_to_symbol_table);
+    log!("\n\t\t\t\t{:x} \t NumberOfSymbols ", nt_header_ref.file_header.number_of_symbols);
+    log!("\n\t\t\t\t{:x} \t SizeOfOptionalHeader ", nt_header_ref.file_header.size_of_optional_header);
+    log!("\n\t\t\t\t{:x} \t Characteristics ", nt_header_ref.file_header.characteristics);
+
+    log!("\nOPTIONAL HEADER VALUES");
+    log!("\n\t\t\t\t{:x} \t Magic  ", nt_header_ref.optional_header.magic);
+    log!("\n\t\t\t\t{:x} \t MajorLinkerVersion   ", nt_header_ref.optional_header.major_linker_version);
+    log!("\n\t\t\t\t{:x} \t MinorLinkerVersion   ", nt_header_ref.optional_header.minor_linker_version);
+    log!("\n\t\t\t\t{:x} \t SizeOfCode   ", nt_header_ref.optional_header.size_of_code);
+    log!("\n\t\t\t\t{:x} \t SizeOfInitializedData   ", nt_header_ref.optional_header.size_of_initialized_data);
+    log!("\n\t\t\t\t{:x} \t SizeOfUninitializedData   ", nt_header_ref.optional_header.size_of_uninitialized_data);
+    log!("\n\t\t\t\t{:x} \t AddressOfEntryPoint   ", nt_header_ref.optional_header.address_of_entry_point);
+    log!("\n\t\t\t\t{:x} \t BaseOfCode    ", nt_header_ref.optional_header.base_of_code);
+
+    log!("\n");
 }
