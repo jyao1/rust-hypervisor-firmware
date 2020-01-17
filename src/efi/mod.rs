@@ -887,7 +887,12 @@ pub extern "win64" fn handle_protocol(
     }
 
     let (status, interface) = HANDLE_DATABASE.lock().handle_protocol(handle, guid);
-    crate::log!("EFI_STUB - handle_protocol: {:?}, handle: {:?} - status {:?}, interface: {:?}\n", unsafe{*guid}, handle, status, interface);
+
+    if ! (unsafe{*guid} == r_efi::protocols::simple_text_input_ex::PROTOCOL_GUID ||
+        unsafe{*guid} == r_efi::protocols::simple_text_output::PROTOCOL_GUID)
+    {
+        crate::log!("EFI_STUB - handle_protocol: {:?}, handle: {:?} - status {:?}, interface: {:?}\n", unsafe{*guid}, handle, status, interface);
+    }
     if status == Status::SUCCESS {
         unsafe {
             *out = interface;
