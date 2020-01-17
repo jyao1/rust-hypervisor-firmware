@@ -127,3 +127,38 @@ pub fn compare_device_path(
   }
   true
 }
+
+pub fn dump_device_path (
+  device_path: *mut DevicePathProtocol
+)
+{
+  let size = get_device_path_node_size(device_path);
+  crate::log!("node_type: {} node_size: {} node_data:", get_device_path_node_type(device_path), get_device_path_node_size(device_path));
+  for i in 0 .. size {
+    if i % 8 == 0 {
+      crate::log!("\n");
+    }
+    unsafe {
+      let d = *((device_path as usize + i as usize) as *mut u8);
+      crate::log!("{:?} ", d);
+    }
+  }
+  crate::log!("\n");
+}
+
+pub fn print_device_path (
+  device_path: *mut DevicePathProtocol
+  )
+{
+  let mut device_path_node = device_path;
+  loop {
+  // let node_size = get_device_path_node_size(device_path_node);
+  // size = size + node_size;
+  dump_device_path(device_path_node);
+  if get_device_path_node_type(device_path_node) == r_efi::protocols::device_path::TYPE_END &&
+      get_device_path_node_sub_type(device_path_node) == r_efi::protocols::device_path::End::SUBTYPE_ENTIRE {
+    break;
+  }
+  device_path_node = get_next_device_path_node (device_path_node);
+  }
+}
