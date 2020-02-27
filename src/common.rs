@@ -69,9 +69,25 @@ pub fn ucs2_to_ascii(input: *const u16, output: &mut [u8]) {
 
 #[cfg(not(test))]
 pub fn ascii_to_ucs2(input: &str, output: &mut [u16]) {
-    assert!(output.len() >= input.len() * 2);
+    assert!(output.len() >= input.len());
 
     for (i, c) in input.bytes().enumerate() {
         output[i] = u16::from(c);
     }
+}
+
+#[cfg(not(test))]
+pub fn ascii_length(input: *const u8, maxlen: usize) -> usize {
+    let mut len = 0;
+    loop {
+        let v = unsafe{ *(((input as u64) + (len as u64)) as *const u8)} as u8 ;
+        if v == 0 {
+            break;
+        }
+        if len > maxlen {
+            break;
+        }
+        len += 1;
+    }
+    len
 }

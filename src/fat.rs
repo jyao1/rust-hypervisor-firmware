@@ -73,14 +73,6 @@ struct FatLongNameEntry {
     name3: [u16; 2],
 }
 
-pub struct DirectoryEntry {
-    name: [u8; 11],
-    long_name: [u8; 255],
-    file_type: FileType,
-    size: u32,
-    cluster: u32,
-}
-
 #[derive(Debug, PartialEq)]
 enum FatType {
     Unknown,
@@ -108,6 +100,15 @@ pub struct Filesystem<'a> {
     root_cluster: u32, // FAT32 only
 }
 
+
+pub struct DirectoryEntry {
+    pub name: [u8; 11],
+    pub long_name: [u8; 255],
+    pub file_type: FileType,
+    pub size: u32,
+    pub cluster: u32,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Error {
     BlockError,
@@ -117,8 +118,8 @@ pub enum Error {
     InvalidOffset,
 }
 
-#[derive(Debug, PartialEq)]
-enum FileType {
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum FileType {
     File,
     Directory,
 }
@@ -134,7 +135,7 @@ pub struct File<'a> {
 
 pub struct Directory<'a> {
     filesystem: &'a Filesystem<'a>,
-    cluster: Option<u32>,
+    pub cluster: Option<u32>,
     sector: u32,
     offset: usize,
 }
@@ -150,6 +151,28 @@ fn ucs2_to_ascii(input: &[u16]) -> [u8; 255] {
         i += 1;
     }
     output
+}
+
+fn get_short_name(input: &[u8; 11]) -> [u8; 11] {
+    let mut index = 0;
+    let mut i = 0;
+    let mut name_vec: [u8;11] = [0;11];
+    for i in 0..8  {
+        if input[i] != 32 {
+            name_vec[index] = input[i];
+            index += 1;
+        }
+    }
+    if input[8] != 32 {
+        name_vec[index] = 46;
+        index += 1;
+        for i in 8..11 {
+            if input[i] !=32 {
+                name_vec[index] = name_vec[i];
+            }
+        }
+    }
+    name_vec
 }
 
 impl<'a> Directory<'a> {
@@ -218,9 +241,10 @@ impl<'a> Directory<'a> {
 
                     continue;
                 }
-
+                let shortname = get_short_name(&d.name);
+                //log!("EFI_STUB - fat.rs d.name is {:?}\n", shortname);
                 let entry = DirectoryEntry {
-                    name: d.name,
+                    name: shortname,
                     file_type: if d.flags & 0x10 == 0x10 {
                         FileType::Directory
                     } else {
@@ -538,7 +562,7 @@ impl<'a> Filesystem<'a> {
         ((cluster - 2) * self.sectors_per_cluster) + self.first_data_sector
     }
 
-    fn root(&self) -> Result<Directory, Error> {
+    pub fn root(&self) -> Result<Directory, Error> {
         match self.fat_type {
             FatType::FAT12 | FatType::FAT16 => {
                 let root_directory_start = self.first_data_sector - self.root_dir_sectors;
@@ -562,7 +586,7 @@ impl<'a> Filesystem<'a> {
         }
     }
 
-    fn get_file(&self, cluster: u32, size: u32) -> Result<File, Error> {
+    pub fn get_file(&self, cluster: u32, size: u32) -> Result<File, Error> {
         Ok(File {
             filesystem: self,
             start_cluster: cluster,
@@ -573,7 +597,7 @@ impl<'a> Filesystem<'a> {
         })
     }
 
-    fn get_directory(&self, cluster: u32) -> Result<Directory, Error> {
+    pub fn get_directory(&self, cluster: u32) -> Result<Directory, Error> {
         Ok(Directory {
             filesystem: self,
             cluster: Some(cluster),
@@ -582,21 +606,39 @@ impl<'a> Filesystem<'a> {
         })
     }
 
-    pub fn open(&self, path: &str) -> Result<File, Error> {
-        assert_eq!(path.find('/').or_else(|| path.find('\\')), Some(0));
+    pub fn open(&self, path: &str) -> Result<DirectoryEntry, Error> {
+        //assert_eq!(path.find('/').or_else(|| path.find('\\')), Some(0));
+
         crate::log!("EFI_STUB - open path is {:?}\n", path);
         let mut residual = path;
 
         let mut current_dir = self.root().unwrap();
+        let mut current_directory_entry = DirectoryEntry {
+            name: [0;11],
+            file_type: FileType::Directory,
+            cluster: self.root().unwrap().cluster.unwrap(),
+            size: 0,
+            long_name: [0; 255],
+        };
+
         crate::log!("EFI_STUB - open - unwrap\n");
         loop {
             // sub is the directory or file name
             // residual is what is left
+            if residual.len() == 0 {
+                crate::log!("EFI-STUB - residual.len() is 0\n");
+                return Ok(current_directory_entry);
+            }
+
             let sub = match &residual[1..]
                 .find('/')
                 .or_else(|| (&residual[1..]).find('\\'))
             {
-                None => &residual[1..],
+                None => {
+                    let sub = &residual[1..];
+                    residual = "";
+                    sub
+                }
                 Some(x) => {
                     // +1 due to above find working on substring
                     let sub = &residual[1..=*x];
@@ -605,28 +647,42 @@ impl<'a> Filesystem<'a> {
                     sub
                 }
             };
-
-            if sub.is_empty() {
-                crate::log!("EFI_STUB - open - not found\n");
-                return Err(Error::NotFound);
+            log!("EFI_STUB - sub is: {:?}, residual is: {:?}\n", sub, residual);
+            if sub.len() == 0 {
+                crate::log!("EFI_STUB - open - sub.len is 0\n");
+                //return Err(Error::NotFound);
+                return Ok(current_directory_entry);
             }
 
             loop {
                 match current_dir.next_entry() {
-                    Err(Error::EndOfFile) => return Err(Error::NotFound),
+                    Err(Error::EndOfFile) => return {crate::log!("EFI_STUB: next_entry end\n"); return Err(Error::NotFound);},
                     Err(e) => {
                         crate::log!("EFI_STUB - open - error\n");
                         return Err(e);
                     },
                     Ok(de) => {
+                        let filename = unsafe{core::str::from_utf8_unchecked(&de.name)};
+                        log!("EFI-STUB: fsopen: {:?}, filesize: {:?}\n", filename, de.size);
                         if compare_name(sub, &de) {
                             match de.file_type {
                                 FileType::Directory => {
                                     current_dir = self.get_directory(de.cluster).unwrap();
+                                    log!("EFI-STUB: current_dir is {:?}", filename);
+                                    current_directory_entry = de;
                                     break;
                                 }
-                                FileType::File => return self.get_file(de.cluster, de.size),
+                                FileType::File => {
+                                    return Ok(de);
+                                }
                             }
+                            // match de.file_type {
+                            //     FileType::Directory => {
+                            //         current_dir = self.get_directory(de.cluster).unwrap();
+                            //         break;
+                            //     }
+                            //     FileType::File => return self.get_file(de.cluster, de.size),
+                            // }
                         }
                     }
                 }

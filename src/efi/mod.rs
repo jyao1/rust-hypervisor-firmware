@@ -952,7 +952,7 @@ pub extern "win64" fn locate_handle(
 pub extern "win64" fn locate_device_path(protocol: *mut Guid, device_path: *mut *mut c_void, device: *mut Handle) -> Status {
 
     let source_path: *mut DevicePathProtocol = unsafe{*device_path as *mut DevicePathProtocol};
-    crate::log!("EFI_STUB: locate_device_path protocol: {:?}, devicePath address: {:?} value {:?}\n", unsafe{*protocol}, source_path, unsafe{*source_path});
+    // crate::log!("EFI_STUB: locate_device_path protocol: {:?}, devicePath address: {:?} value {:?}\n", unsafe{*protocol}, source_path, unsafe{*source_path});
 
     if device_path == core::ptr::null_mut() {
         crate::log!("EFI_STUB: locate_device_path: device_path is NULL\n");
@@ -976,7 +976,7 @@ pub extern "win64" fn locate_device_path(protocol: *mut Guid, device_path: *mut 
     }
 
     let source_size = tmp_device_path as *mut c_void as u64 - source_path as *mut c_void as u64;
-    crate::log!("EFI_STUB: locate_device_path: source_size is {}\n", source_size);
+    // crate::log!("EFI_STUB: locate_device_path: source_size is {}\n", source_size);
 
     let (status, handle_count, handle_buffer) = HANDLE_DATABASE.lock().locate_handle_buffer(protocol);
     if status != Status::SUCCESS || handle_count == 0 {
@@ -998,7 +998,7 @@ pub extern "win64" fn locate_device_path(protocol: *mut Guid, device_path: *mut 
             continue;
         }
 
-        crate::log!("EFI_STUB: locate_device_path: interface address: {:?}, interface data: {:?}\n", interface, unsafe{*(interface as *mut DevicePathProtocol)});
+        // crate::log!("EFI_STUB: locate_device_path: interface address: {:?}, interface data: {:?}\n", interface, unsafe{*(interface as *mut DevicePathProtocol)});
         let size = crate::efi::device_path::get_device_path_size(interface as *mut DevicePathProtocol) - 4;
 
         if (size as u64 <= source_size) && crate::efi::device_path::compare_device_path(interface as *mut DevicePathProtocol, source_path, size) == true {
@@ -1026,7 +1026,7 @@ pub extern "win64" fn locate_device_path(protocol: *mut Guid, device_path: *mut 
         *device = best_device;
         let dp = (source_path as u64 + best_match as u64) as *mut DevicePathProtocol;
         *device_path = dp as *mut c_void;
-        crate::log!("EFI_STUB: locate_device_path: device_path address {:?}, device_path {:?}, device: {:?}\n", dp, *dp, best_device);
+        // crate::log!("EFI_STUB: locate_device_path: device_path address {:?}, device_path {:?}, device: {:?}\n", dp, *dp, best_device);
     }
 
     Status::SUCCESS

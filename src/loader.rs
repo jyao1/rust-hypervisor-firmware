@@ -116,7 +116,7 @@ const ENTRY_DIRECTORY: &str = "/loader/entries/";
 fn default_entry_path(fs: &fat::Filesystem) -> Result<[u8; 260], fat::Error> {
     let mut f = fs.open("/loader/loader.conf")?;
 
-    let default_entry = default_entry_file(&mut f)?;
+    let default_entry = default_entry_file(&mut fs.get_file(f.cluster, f.size).unwrap())?;
     let default_entry = ascii_strip(&default_entry);
 
     let mut entry_path = [0u8; 260];
@@ -133,18 +133,18 @@ pub fn load_default_entry(fs: &fat::Filesystem) -> Result<(u64), Error> {
     let default_entry_path = ascii_strip(&default_entry_path);
 
     let mut f = fs.open(default_entry_path)?;
-    let entry = parse_entry(&mut f)?;
+    let entry = parse_entry(&mut fs.get_file(f.cluster, f.size).unwrap())?;
 
     let bzimage_path = ascii_strip(&entry.bzimage_path);
     let initrd_path = ascii_strip(&entry.initrd_path);
     let cmdline = ascii_strip(&entry.cmdline);
 
     let mut bzimage_file = fs.open(bzimage_path)?;
-    let jump_address = bzimage::load_kernel(&mut bzimage_file)?;
+    let jump_address = bzimage::load_kernel(&mut fs.get_file(bzimage_file.cluster, bzimage_file.size).unwrap())?;
 
     if !initrd_path.is_empty() {
         let mut initrd_file = fs.open(initrd_path)?;
-        bzimage::load_initrd(&mut initrd_file)?;
+        bzimage::load_initrd(&mut fs.get_file(initrd_file.cluster, initrd_file.size).unwrap())?;
     }
 
     if !cmdline.is_empty() {
@@ -167,7 +167,7 @@ mod tests {
         fs.init().expect("Error initialising filesystem");
 
         let mut f = fs.open("/loader/loader.conf").unwrap();
-        let s = super::default_entry_file(&mut f).unwrap();
+        let s = super::default_entry_file(&mut fs.get_file(f.cluster, f.size).unwrap()).unwrap();
         let s = super::ascii_strip(&s);
         assert_eq!(s, "Clear-linux-kvm-5.0.6-318");
 
@@ -180,7 +180,7 @@ mod tests {
         );
 
         let mut f = fs.open(default_entry_path).unwrap();
-        let entry = super::parse_entry(&mut f).unwrap();
+        let entry = super::parse_entry(&mut fs.get_file(f.cluster, f.size).unwrap()).unwrap();
         let s = super::ascii_strip(&entry.bzimage_path);
         assert_eq!(s, "/EFI/org.clearlinux/kernel-org.clearlinux.kvm.5.0.6-318");
         let s = super::ascii_strip(&entry.cmdline);
