@@ -553,7 +553,7 @@ impl Status {
         Status(v)
     }
 
-    fn value(&self) -> usize {
+    pub fn value(&self) -> usize {
         self.0
     }
 

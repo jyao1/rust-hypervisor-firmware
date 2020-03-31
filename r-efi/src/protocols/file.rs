@@ -48,7 +48,7 @@ pub struct Info {
     pub last_access_time: crate::system::Time,
     pub modification_time: crate::system::Time,
     pub attribute: u64,
-    pub file_name: [crate::base::Char16],
+    pub file_name: *mut crate::base::Char16,
 }
 
 #[repr(C)]
