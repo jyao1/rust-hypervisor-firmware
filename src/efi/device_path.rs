@@ -162,3 +162,25 @@ pub fn print_device_path (
   device_path_node = get_next_device_path_node (device_path_node);
   }
 }
+
+pub fn get_file_path_media_device_path(device_path: *mut DevicePathProtocol) -> Option<*mut u16>
+{
+   let mut device_path_node = device_path;
+
+   loop {
+      if get_device_path_node_type(device_path_node) == r_efi::protocols::device_path::TYPE_END &&
+        get_device_path_node_sub_type(device_path_node) == r_efi::protocols::device_path::End::SUBTYPE_ENTIRE {
+          return None
+      }
+      if get_device_path_node_type(device_path_node) == r_efi::protocols::device_path::TYPE_MEDIA &&
+        get_device_path_node_sub_type(device_path_node) == r_efi::protocols::device_path::Media::SUBTYPE_FILE_PATH {
+          return Some(unsafe{(device_path_node as usize + 4 as usize) as *mut u16})
+      }
+      if get_device_path_node_type(device_path_node) == r_efi::protocols::device_path::TYPE_END &&
+        get_device_path_node_sub_type(device_path_node) == r_efi::protocols::device_path::End::SUBTYPE_ENTIRE {
+        break;
+      }
+      device_path_node = get_next_device_path_node (device_path_node);
+   }
+   None
+}

@@ -163,7 +163,7 @@ impl Image {
         loaded_image.load_options = core::ptr::null_mut();
         loaded_image.image_base = image_address as *mut c_void;
         loaded_image.image_size = image_size as u64;
-        loaded_image.image_code_type = MemoryType::BootServicesCode;
+        loaded_image.image_code_type = MemoryType::LoaderCode;
         loaded_image.image_data_type = MemoryType::BootServicesData;
         loaded_image.unload = crate::efi::image_unload;
 

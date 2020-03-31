@@ -37,7 +37,7 @@ use r_efi::efi;
 use r_efi::efi::{
     AllocateType, Boolean, CapsuleHeader, Char16, Event, EventNotify, Guid, Handle, InterfaceType,
     LocateSearchType, MemoryDescriptor, MemoryType, OpenProtocolInformationEntry, PhysicalAddress,
-    ResetType, Status, Time, TimeCapabilities, TimerDelay, Tpl, OPEN_PROTOCOL_GET_PROTOCOL, MEMORY_WB
+    ResetType, Status, Time, TimeCapabilities, TimerDelay, Tpl, OPEN_PROTOCOL_GET_PROTOCOL, MEMORY_WB,
 };
 
 use r_efi::protocols::simple_text_input::InputKey;
@@ -584,7 +584,7 @@ pub extern "win64" fn get_next_variable_name(
     _: *mut Char16,
     _: *mut Guid,
 ) -> Status {
-    crate::log!("EFI_STUB: get_next_variable - UNSUPPORTED\n");
+    crate::log!("EFI_STUB: get_next_variable - UNSUPPORTED, TODO\n");
     Status::UNSUPPORTED
 }
 
@@ -871,8 +871,8 @@ pub extern "win64" fn uninstall_protocol_interface(
     _: *mut Guid,
     _: *mut c_void,
 ) -> Status {
-    crate::log!("EFI_STUB: uninstall_protocol_interface - UNSUPPORTED\n");
-    Status::UNSUPPORTED
+    crate::log!("EFI_STUB: uninstall_protocol_interface - UNSUPPORTED, TODO\n");
+    Status::SUCCESS
 }
 
 #[cfg(not(test))]
@@ -891,7 +891,7 @@ pub extern "win64" fn handle_protocol(
     if ! (unsafe{*guid} == r_efi::protocols::simple_text_input_ex::PROTOCOL_GUID ||
         unsafe{*guid} == r_efi::protocols::simple_text_output::PROTOCOL_GUID)
     {
-        crate::log!("EFI_STUB - handle_protocol: {:?}, handle: {:?} - status {:?}, interface: {:?}\n", unsafe{*guid}, handle, status, interface);
+        crate::log!("EFI_STUB - handle_protocol: {:?}, handle: {:?} - status {:x}, interface: {:?}\n", unsafe{*guid}, handle, status.value(), interface);
     }
     if status == Status::SUCCESS {
         unsafe {
@@ -935,7 +935,7 @@ pub extern "win64" fn locate_handle(
 
     let input_buffer_size = unsafe { *buffer_size };
     let (status, final_buffer_size) = HANDLE_DATABASE.lock().locate_handle(guid, input_buffer_size, buffer);
-    crate::log!("EFI_STUB: locate_handle - guid: {:?}, buffer_size: {:?} - status: {:?}, buffer_size: {:?}\n", unsafe{*guid}, unsafe{*buffer_size}, status, final_buffer_size);
+    crate::log!("EFI_STUB: locate_handle - guid: {:?}, buffer_size: {:?} - status: {:x}, buffer_size: {:?}\n", unsafe{*guid}, unsafe{*buffer_size}, status.value(), final_buffer_size);
     match status {
       Status::SUCCESS => {},
       Status::BUFFER_TOO_SMALL => {},
@@ -991,7 +991,7 @@ pub extern "win64" fn locate_device_path(protocol: *mut Guid, device_path: *mut 
 
     for index in 0 .. handle_count {
         unsafe{handle = (*handles)[index];}
-        let (status, interface) = HANDLE_DATABASE.lock().handle_protocol(handle, 
+        let (status, interface) = HANDLE_DATABASE.lock().handle_protocol(handle,
             &mut r_efi::protocols::device_path::PROTOCOL_GUID as *mut Guid);
         if status != Status::SUCCESS {
             crate::log!("EFI_STUB: locate_device_path: error {:?}\n", status);
@@ -1003,7 +1003,7 @@ pub extern "win64" fn locate_device_path(protocol: *mut Guid, device_path: *mut 
 
         if (size as u64 <= source_size) && crate::efi::device_path::compare_device_path(interface as *mut DevicePathProtocol, source_path, size) == true {
             if size as i32 == best_match {
-                crate::log!("EFI_STUB: locate_device_path: duplicate device path for 2 different device handles\n");  
+                crate::log!("EFI_STUB: locate_device_path: duplicate device path for 2 different device handles\n");
             }
 
             if size as i32 > best_match {
@@ -1049,16 +1049,74 @@ pub extern "win64" fn load_image(
     source_size: usize,
     image_handle: *mut Handle,
 ) -> Status {
-    crate::log!("EFI_STUB: load_image\n");
+    crate::log!("EFI_STUB: load_image size is: {}, parent_image_handle: {:?}\n", source_size, parent_image_handle);
+    let mut source_buffer = source_buffer;
+    let mut source_size = source_size;
 
-    let (status, new_image_handle) = IMAGE.lock().load_image(
+    if source_size == 0 {
+        //device_path::print_device_path(device_path as *mut efi::protocols::device_path::Protocol);
+        if let Some(filename) = crate::efi::device_path::get_file_path_media_device_path(device_path as *mut efi::protocols::device_path::Protocol) {
+            let mut name = [0u8;512];
+            char16_to_char8(filename, 256, &name[0] as *const u8 as *mut u8, 256);
+            log!("EFI_STUB: filename is {}\n", core::str::from_utf8(&name[..]).unwrap_or("error"));
+            let mut fs_interface = core::ptr::null_mut();
+            //let status = handle_protocol(parent_image_handle, &efi::protocols::simple_file_system::PROTOCOL_GUID as *const efi::Guid as *mut efi::Guid, &mut fs_interface);
+            let mut handle = core::ptr::null_mut();
+            crate::log!("EFI_STUB: start locate_protocol\n");
+            let status = locate_protocol(&efi::protocols::simple_file_system::PROTOCOL_GUID as *const efi::Guid as *mut efi::Guid, handle, &mut fs_interface);
+            crate::log!("EFI_STUB: simple_file_system protocol 0x{:p} status: {:x}\n", fs_interface, status.value());
+            let mut fs = fs_interface as *mut efi::protocols::simple_file_system::Protocol;
+            let mut rootfile = core::ptr::null_mut() as *mut efi::protocols::file::Protocol;
+            let mut desfile = core::ptr::null_mut() as *mut efi::protocols::file::Protocol;
+            let mut status: efi::Status = unsafe{((*fs).open_volume)(fs, &mut rootfile)};
+            if status.is_error() {
+                log!("EFI_STUB: load image open_volume error \n");
+            }
+
+            unsafe{
+                status = ((*rootfile).open)(rootfile, &mut desfile as *mut *mut efi::protocols::file::Protocol, filename as *mut efi::Char16, efi::protocols::file::MODE_READ, 0);
+                if status.is_error() {
+                    log!("EFI_STUB: load image open error \n");
+                }
+                let mut buffer = [0u8; core::mem::size_of::<efi::protocols::file::Info>() + 1024];
+                let mut buffer_size:usize = core::mem::size_of::<efi::protocols::file::Info>() + 1024;
+                status = ((*desfile).get_info)(desfile, &mut efi::protocols::file::INFO_ID as *mut efi::Guid, &mut buffer_size, &mut buffer[0] as *mut u8 as *mut core::ffi::c_void);
+                if status.is_error() {
+                    log!("EFI_STUB: load image get_info error 0x{:x}\n", status.value());
+                }
+                let desfile_info = &buffer as *const u8 as *mut efi::protocols::file::Info;
+                source_size = unsafe{(*desfile_info).file_size} as usize;
+                log!("EFI_STUB: file size is: {:?}\n", source_size);
+
+                source_buffer = core::ptr::null_mut();
+                status = crate::efi::allocate_pool (MemoryType::BootServicesData, source_size, &mut source_buffer);
+                if status != Status::SUCCESS {
+                  log!("load_image - fail on allocate pool\n");
+                  return Status::OUT_OF_RESOURCES;
+                }
+
+                status = ((*desfile).read)(desfile, &mut source_size, source_buffer);
+                if status.is_error() {
+                    log!("EFI_STUB: load image read error 0x{:x}\n", status.value());
+                }
+            }
+
+        } else {
+            log!("EFI_STUB: not found filename\n");
+        }
+        // simple file system device path
+
+    }
+
+    //let (status, new_image_handle) = IMAGE.lock().load_image(
+    let (status, new_image_handle) = Image::new().load_image(
         parent_image_handle,
         device_path,
         source_buffer,
         source_size,
     );
 
-    crate::log!("EFI_STUB: load_image done handle {:?} status {:?}\n", new_image_handle, status);
+    crate::log!("EFI_STUB: load_image done handle {:?} status 0x{:x}\n", new_image_handle, status.value());
     if status == Status::SUCCESS {
         if image_handle != core::ptr::null_mut() {
           unsafe { *image_handle = new_image_handle };
@@ -1076,7 +1134,7 @@ pub extern "win64" fn start_image(
 ) -> Status {
     crate::log!("EFI_STUB: start_image, handle: {:?}\n", image_handle);
 
-    let (status, new_exit_data_size, new_exit_data) = IMAGE.lock().start_image(image_handle);
+    let (status, new_exit_data_size, new_exit_data) = Image::new().start_image(image_handle);
 
     if exit_data_size != core::ptr::null_mut() {
       unsafe { *exit_data_size = new_exit_data_size };
@@ -1236,6 +1294,7 @@ pub extern "win64" fn locate_handle_buffer(
 
 #[cfg(not(test))]
 pub extern "win64" fn locate_protocol(guid: *mut Guid, registration: *mut c_void, interface: *mut *mut c_void) -> Status {
+    crate::log!("EFI_STUB: locate_protocol - {:?}\n", unsafe{*guid});
     if guid == core::ptr::null_mut() {
         crate::log!("EFI_STUB: locate_protocol - NULL\n");
         return Status::INVALID_PARAMETER;
@@ -1569,7 +1628,7 @@ pub static mut BS : efi::BootServices = efi::BootServices {
 
 const MAX_CONFIGURATION_TABLE : usize = 4;
 
-pub static mut CT : [efi::ConfigurationTable; MAX_CONFIGURATION_TABLE] = 
+pub static mut CT : [efi::ConfigurationTable; MAX_CONFIGURATION_TABLE] =
         [
           efi::ConfigurationTable {
             vendor_guid: Guid::from_fields(0, 0, 0, 0, 0, &[0; 6]), // TODO
@@ -1638,7 +1697,7 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
       ST.number_of_table_entries = MAX_CONFIGURATION_TABLE;
       ST.configuration_table = &mut CT as *mut [r_efi::system::ConfigurationTable; MAX_CONFIGURATION_TABLE] as *mut r_efi::system::ConfigurationTable;
     }
-    
+
     crate::pi::hob_lib::dump_hob (hob);
 
     crate::efi::init::initialize_memory(hob);
