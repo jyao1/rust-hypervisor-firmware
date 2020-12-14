@@ -13,7 +13,7 @@ panic = "abort" # disable stack unwinding on panic
 panic = "abort" # disable stack unwinding on panic
 
 [dependencies]
-cpuio = "*"
+cpuio = "0.3.0"
 spin = "0.4.9"
 r-efi = {path = "r-efi"}
 

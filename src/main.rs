@@ -14,7 +14,7 @@
 
 #![allow(unused)]
 
-#![feature(asm)]
+#![feature(llvm_asm)]
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 #![cfg_attr(test, allow(unused_imports))]
@@ -70,12 +70,12 @@ fn i8042_reset() -> ! {
 /// Enable SSE2 for XMM registers (needed for EFI calling)
 fn enable_sse2() {
     unsafe {
-        asm!("movq %cr0, %rax");
-        asm!("or $$0x2, %ax");
-        asm!("movq %rax, %cr0");
-        asm!("movq %cr4, %rax");
-        asm!("or $$0x600, %ax");
-        asm!("movq %rax, %cr4");
+        llvm_asm!("movq %cr0, %rax");
+        llvm_asm!("or $$0x2, %ax");
+        llvm_asm!("movq %rax, %cr0");
+        llvm_asm!("movq %cr4, %rax");
+        llvm_asm!("or $$0x600, %ax");
+        llvm_asm!("movq %rax, %cr4");
     }
 }
 
