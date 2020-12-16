@@ -43,6 +43,7 @@ mod part;
 mod pci;
 mod pe;
 mod virtio;
+mod calloc;
 
 #[cfg(not(test))]
 #[panic_handler]
