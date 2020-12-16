@@ -65,3 +65,20 @@ impl Media {
     pub const SUBTYPE_RELATIVE_OFFSET_RANGE:    u8 = 0x9;
     pub const SUBTYPE_RAM_DISK:                 u8 = 0x9;
 }
+
+#[repr(C,packed)]
+pub struct HardDriveDevicePathNode {
+  pub header : Protocol,
+  pub partition_number: u32,
+  pub partition_start: u64,
+  pub partition_size: u64,
+  pub partition_signature: [u64;2],
+  pub partition_format: u8,
+  pub signature_type: u8,
+}
+
+#[repr(C,packed)]
+pub struct HardDriveDevicePath {
+  pub file_system_path_node : HardDriveDevicePathNode,
+  pub end: End,
+}
