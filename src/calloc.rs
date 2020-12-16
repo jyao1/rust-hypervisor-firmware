@@ -37,3 +37,15 @@ pub fn malloc<T>() -> Result<*mut T, Status> {
 pub fn free<T>(ptr: *mut T) {
     ALLOCATOR.lock().free_pages(&ptr as *const _ as u64);
 }
+
+pub fn duplicate<T>(d: &T) -> Result<*mut T, Status> {
+    let t = malloc::<T>()?;
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            d as *const T as *const c_void,
+            t as *mut c_void,
+            core::mem::size_of::<T>(),
+        );
+    }
+    Ok(t)
+}
