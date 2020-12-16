@@ -16,6 +16,7 @@ panic = "abort" # disable stack unwinding on panic
 cpuio = "0.3.0"
 spin = "0.4.9"
 r-efi = {path = "r-efi"}
+efi-str = { path = "efi-str" }
 
 [dependencies.lazy_static]
 version = "1.0"
