@@ -1,4 +1,4 @@
-// Copyright © 2019 Intel Corporation
+// Copyright © 2019-2020 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -70,7 +70,7 @@ pub enum Error {
     NoEFIPartition,
 }
 
-pub fn get_partitions(r: &SectorRead, parts_out: &mut [PartitionEntry]) -> Result<u32, Error> {
+pub fn get_partitions(r: &dyn SectorRead, parts_out: &mut [PartitionEntry]) -> Result<u32, Error> {
     let mut data: [u8; 512] = [0; 512];
     match r.read(1, &mut data) {
         Ok(_) => {}
@@ -125,7 +125,7 @@ pub fn get_partitions(r: &SectorRead, parts_out: &mut [PartitionEntry]) -> Resul
 }
 
 /// Find EFI partition
-pub fn find_efi_partition(r: &SectorRead) -> Result<(u64, u64), Error> {
+pub fn find_efi_partition(r: &dyn SectorRead) -> Result<(u64, u64, u32), Error> {
     let mut data: [u8; 512] = [0; 512];
     match r.read(1, &mut data) {
         Ok(_) => {}
@@ -156,11 +156,12 @@ pub fn find_efi_partition(r: &SectorRead) -> Result<(u64, u64), Error> {
         }
 
         // Safe as size of partition struct * 4 is 512 bytes (size of data)
-        let parts = unsafe { core::slice::from_raw_parts(data.as_ptr() as *const PartitionEntry, 4) };
+        let parts =
+            unsafe { core::slice::from_raw_parts(data.as_ptr() as *const PartitionEntry, 4) };
 
         for p in parts {
             if p.is_efi_partition() {
-                return Ok((p.first_lba, p.last_lba));
+                return Ok((p.first_lba, p.last_lba, checked_part_count + 1));
             }
             checked_part_count += 1;
             if checked_part_count == part_count {
@@ -175,7 +176,6 @@ pub fn find_efi_partition(r: &SectorRead) -> Result<(u64, u64), Error> {
 #[cfg(test)]
 pub mod tests {
     use std::cell::RefCell;
-    use std::env;
     use std::fs;
     use std::fs::File;
     use std::fs::Metadata;
@@ -186,6 +186,7 @@ pub mod tests {
     use crate::block;
     use crate::block::SectorRead;
 
+    #[derive(Debug)]
     pub struct FakeDisk {
         file: RefCell<File>,
         metadata: Metadata,
@@ -204,6 +205,10 @@ pub mod tests {
         pub fn len(&self) -> u64 {
             self.metadata.len()
         }
+
+        pub fn total_sectors(&self) -> u64 {
+            self.len() / 512
+        }
     }
 
     impl SectorRead for FakeDisk {
@@ -211,11 +216,11 @@ pub mod tests {
             let mut file = self.file.borrow_mut();
             match file.seek(SeekFrom::Start(sector * 512)) {
                 Ok(_) => {}
-                Err(_) => return Err(block::Error::BlockIOError),
+                Err(_) => return Err(block::Error::DEVICE_ERROR),
             }
             match file.read(data) {
                 Ok(_) => {}
-                Err(_) => return Err(block::Error::BlockIOError),
+                Err(_) => return Err(block::Error::DEVICE_ERROR),
             }
             Ok(())
         }
@@ -223,12 +228,17 @@ pub mod tests {
 
     #[test]
     fn test_find_efi_partition() {
-        let d = FakeDisk::new("clear-28660-kvm.img");
+        let d = FakeDisk::new("test\\clear-31380-kvm.img");
+        println!("disk.len is {}", d.len());
+
+        assert_eq!(d.len(), 9_169_755_648);
 
         match super::find_efi_partition(&d) {
-            Ok((start, end)) => {
+            Ok((start, end, part_id)) => {
+                println!("start: {}, end: {}, part_id: {}", start, end, part_id);
                 assert_eq!(start, 2048);
-                assert_eq!(end, 1_048_575);
+                assert_eq!(end, 1_046_527);
+                assert_eq!(part_id, 1);
             }
             Err(e) => panic!(e),
         }

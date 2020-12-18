@@ -1742,9 +1742,9 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
         let mut partition_end:u64;
 
         match part::find_efi_partition(&device) {
-            Ok((start, end)) => {
+            Ok((start, end, part_id)) => {
                 log!("Found EFI partition\n");
-                f = fat::Filesystem::new(&device, start, end);
+                f = fat::Filesystem::new(&device, start, end, part_id);
                 if f.init().is_err() {
                     log!("Failed to create filesystem\n");
                 }
@@ -1752,7 +1752,7 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
                 partition_end = end;
                 let efi_part_id= unsafe { crate::efi::block::populate_block_wrappers(&mut crate::efi::BLOCK_WRAPPERS, &device) };
                 log!("Filesystem ready\n");
-                let mut wrapped_fs = file::FileSystemWrapper::new(&f, efi_part_id);
+                let mut wrapped_fs = unsafe{&mut (*file::FileSystemWrapper::new(f).unwrap())};
                 let mut handle : Handle = core::ptr::null_mut();
                 let status = crate::efi::install_protocol_interface (
                     &mut handle as *mut Handle,

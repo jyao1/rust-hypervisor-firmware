@@ -86,6 +86,8 @@ struct DriverState {
 }
 
 pub enum Error {
+    DEVICE_ERROR,
+    BlockError,
     BlockIOError,
 
     #[cfg(not(test))]
