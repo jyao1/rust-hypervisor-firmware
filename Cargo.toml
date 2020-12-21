@@ -17,6 +17,7 @@ cpuio = "0.3.0"
 spin = "0.4.9"
 r-efi = {path = "r-efi"}
 efi-str = { path = "efi-str" }
+x86_64 = "0.12.3"
 
 [dependencies.lazy_static]
 version = "1.0"
