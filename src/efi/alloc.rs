@@ -104,7 +104,7 @@ impl Allocator {
         let next = self.find_free_allocation();
 
         if next == MAX_ALLOCATIONS {
-            //log!("{}:{} out of resource\n", file!(), line!());
+            log!("{}:{} out of resource\n", file!(), line!());
             return Status::OUT_OF_RESOURCES;
         }
 

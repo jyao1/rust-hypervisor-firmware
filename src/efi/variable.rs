@@ -31,7 +31,7 @@ pub const GLOBAL_VARIABLE_GUID: Guid = Guid::from_fields(
 
 pub const MAX_VARIABLE_NAME: usize = 32;
 
-pub const MAX_VARIABLE_DATA: usize = 128;
+pub const MAX_VARIABLE_DATA: usize = 2048;
 
 #[repr(C)]
 #[derive(Copy, Clone)]

@@ -46,7 +46,7 @@ impl Default for ProtocolStruct {
     }
 }
 
-const MAX_PROTOCOL_STRUCT: usize = 16;
+const MAX_PROTOCOL_STRUCT: usize = 32;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone)]
@@ -56,7 +56,7 @@ struct ProtocolHandle {
     protocol_struct : [ProtocolStruct; MAX_PROTOCOL_STRUCT],
 }
 
-const MAX_HANDLE_STRUCT: usize = 16;
+const MAX_HANDLE_STRUCT: usize = 32;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone)]
@@ -127,6 +127,7 @@ impl HandleDatabase {
             let protocol_handle = unsafe {transmute::<Handle, *mut ProtocolHandle>(cur_handle)};
             unsafe { assert!((*protocol_handle).signature == HANDLE_SIGNATURE); }
             if unsafe {(*protocol_handle).protocol_count} > MAX_PROTOCOL_STRUCT - count {
+              log!("{}:{} out of resource\n", file!(), line!());
               return (Status::OUT_OF_RESOURCES, core::ptr::null_mut());
             }
             for index in 0 .. count {
@@ -190,7 +191,7 @@ impl HandleDatabase {
     ) {
         let address = handle_buffer as usize;
         let handle_buffer = address as *mut [Handle; MAX_HANDLE_STRUCT];
-        
+
         let mut count = 0usize;
         for index in 0 .. self.protocol_handle_count {
           let protocol_handle = &mut self.protocol_handle[index] as *mut ProtocolHandle;
@@ -211,7 +212,7 @@ impl HandleDatabase {
         if status != Status::SUCCESS {
           return (status, 0, core::ptr::null_mut())
         }
-        
+
         let mut handle_buffer_address: *mut c_void = core::ptr::null_mut();
         let status = crate::efi::allocate_pool (
                        MemoryType::BootServicesData,
@@ -289,6 +290,7 @@ impl HandleDatabase {
         ) -> (Status, *mut ProtocolStruct) {
         unsafe {
           if ((*protocol_handle).protocol_count >= MAX_PROTOCOL_STRUCT) {
+            log!("{}:{} out of resource\n", file!(), line!());
             return (Status::OUT_OF_RESOURCES, core::ptr::null_mut());
           }
           let protocol_struct = &mut (*protocol_handle).protocol_struct[(*protocol_handle).protocol_count];
@@ -300,7 +302,7 @@ impl HandleDatabase {
           (Status::SUCCESS, protocol_struct as *mut ProtocolStruct)
         }
     }
-    
+
     fn get_protocol (
         &mut self,
         protocol_handle : *mut ProtocolHandle,
@@ -322,6 +324,7 @@ impl HandleDatabase {
         &mut self
         ) -> (Status, Handle) {
         if (self.protocol_handle_count >= MAX_HANDLE_STRUCT) {
+          log!("{}:{} out of resource\n", file!(), line!());
           return (Status::OUT_OF_RESOURCES, core::ptr::null_mut());
         }
         let protocol_handle = &mut self.protocol_handle[self.protocol_handle_count];
@@ -340,7 +343,7 @@ impl HandleDatabase {
         if handle == core::ptr::null_mut() {
           return (Status::NOT_FOUND, core::ptr::null_mut());
         }
-    
+
         let protocol_handle = unsafe {transmute::<Handle, &mut ProtocolHandle>(handle)};
         if protocol_handle.signature != HANDLE_SIGNATURE {
           return (Status::INVALID_PARAMETER, core::ptr::null_mut())
@@ -354,7 +357,7 @@ impl HandleDatabase {
             protocol_handle_count: 0,
             ..HandleDatabase::default()
         }
-        
+
     }
 }
 

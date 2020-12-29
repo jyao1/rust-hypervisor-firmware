@@ -596,6 +596,7 @@ pub extern "win64" fn set_variable(
     size: usize,
     data: *mut c_void,
 ) -> Status {
+    // log!("EFI_STUB - set_variable size: {}\n", size);
     let var_name_size = get_char16_size (var_name, core::usize::MAX);
     if false {
       crate::log!("EFI_STUB: set_variable ");
@@ -845,7 +846,7 @@ pub extern "win64" fn install_protocol_interface(
                 guid,
                 interface,
             );
-    crate::log!("EFI_STUB: install_protocol_interface: {:?}, handle: {:?}, interface: {:?} - new_handle: {:?} status: {:?}\n", unsafe{*guid}, unsafe{*handle}, interface, new_handle, status);
+    crate::log!("EFI_STUB: install_protocol_interface: {:?}, handle: {:?}, interface: {:?} - new_handle: {:?} status: {:x}\n", unsafe{*guid}, unsafe{*handle}, interface, new_handle, status.value() as u64);
     if status == Status::SUCCESS {
         unsafe {
             *handle = new_handle;
@@ -1053,18 +1054,18 @@ pub extern "win64" fn load_image(
     let mut source_buffer = source_buffer;
     let mut source_size = source_size;
 
+    let mut fs_interface = core::ptr::null_mut();
+    crate::log!("EFI_STUB: start locate_protocol\n");
+    let status = locate_protocol(&efi::protocols::simple_file_system::PROTOCOL_GUID as *const efi::Guid as *mut efi::Guid, fs_interface, &mut fs_interface);
+    crate::log!("EFI_STUB: simple_file_system protocol 0x{:p} status: {:x}\n", fs_interface, status.value());
     if source_size == 0 {
         //device_path::print_device_path(device_path as *mut efi::protocols::device_path::Protocol);
         if let Some(filename) = crate::efi::device_path::get_file_path_media_device_path(device_path as *mut efi::protocols::device_path::Protocol) {
             let mut name = [0u8;512];
             char16_to_char8(filename, 256, &name[0] as *const u8 as *mut u8, 256);
             log!("EFI_STUB: filename is {}\n", core::str::from_utf8(&name[..]).unwrap_or("error"));
-            let mut fs_interface = core::ptr::null_mut();
             //let status = handle_protocol(parent_image_handle, &efi::protocols::simple_file_system::PROTOCOL_GUID as *const efi::Guid as *mut efi::Guid, &mut fs_interface);
-            let mut handle = core::ptr::null_mut();
-            crate::log!("EFI_STUB: start locate_protocol\n");
-            let status = locate_protocol(&efi::protocols::simple_file_system::PROTOCOL_GUID as *const efi::Guid as *mut efi::Guid, handle, &mut fs_interface);
-            crate::log!("EFI_STUB: simple_file_system protocol 0x{:p} status: {:x}\n", fs_interface, status.value());
+            // let mut handle = core::ptr::null_mut();
             let mut fs = fs_interface as *mut efi::protocols::simple_file_system::Protocol;
             let mut rootfile = core::ptr::null_mut() as *mut efi::protocols::file::Protocol;
             let mut desfile = core::ptr::null_mut() as *mut efi::protocols::file::Protocol;
@@ -1117,6 +1118,22 @@ pub extern "win64" fn load_image(
     );
 
     crate::log!("EFI_STUB: load_image done handle {:?} status 0x{:x}\n", new_image_handle, status.value());
+
+    let mut loaded_image = core::ptr::null_mut();
+    let status = handle_protocol(new_image_handle, &mut r_efi::protocols::loaded_image::PROTOCOL_GUID as *const efi::Guid as *mut efi::Guid, &mut loaded_image);
+    crate::log!("EFI_STUB: loaded_image protocol {:p} status: {:x}\n", loaded_image, status.value());
+
+    let mut loaded_image: &mut image::LoadedImageProtocol = unsafe {transmute::<*mut c_void, &mut image::LoadedImageProtocol>(loaded_image as *mut c_void)};
+    crate::log!("EFI_STUB: loaded_image.device_handle: {:p}\n", loaded_image.device_handle);
+
+    crate::log!("EFI_STUB: loaded_image fs_interface: {:p}\n", fs_interface);
+    let status = crate::efi::install_protocol_interface (
+        &mut loaded_image.device_handle as *mut *mut c_void,
+        &mut r_efi::efi::protocols::simple_file_system::PROTOCOL_GUID as *mut Guid,
+        InterfaceType::NativeInterface,
+        fs_interface
+        );
+
     if status == Status::SUCCESS {
         if image_handle != core::ptr::null_mut() {
           unsafe { *image_handle = new_image_handle };
@@ -1173,7 +1190,7 @@ pub extern "win64" fn get_next_monotonic_count(_: *mut u64) -> Status {
 #[cfg(not(test))]
 pub extern "win64" fn stall(_: usize) -> Status {
     crate::log!("EFI_STUB: stall - called\n");
-    Status::SUCCESS
+    Status::UNSUPPORTED
 }
 
 #[cfg(not(test))]
