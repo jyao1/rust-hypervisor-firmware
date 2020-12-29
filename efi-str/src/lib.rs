@@ -1,5 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
+#![feature(unicode_internals)]
+
 pub mod encoder;
 
 #[macro_use]
@@ -28,5 +30,11 @@ mod tests {
         assert_eq!(path_osstr_nul, "中国\0");
         assert_ne!(path_osstr, path_osstr_nul);
         assert_ne!("中1", path_osstr);
+
+        let str_lower = "hi";
+        let str_upper = [0x48, 0x49];
+        let str_upper = OsStr::from_u16_slice(&str_upper);
+
+        assert_eq!(str_upper.eq_ignore_ascii_case(str_lower), true);
     }
 }

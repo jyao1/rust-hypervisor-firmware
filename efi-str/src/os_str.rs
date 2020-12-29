@@ -1,5 +1,6 @@
 use core::fmt;
 use core::slice::Iter;
+use core::unicode::conversions;
 
 pub struct OsStr([u16]);
 
@@ -91,6 +92,21 @@ impl OsStr {
             }
         }
         res
+    }
+
+    pub fn eq_ignore_ascii_case(&self, other: &str) -> bool {
+        if self.0.len() == other.chars().count() {
+            let mut i = 0;
+            for c in other.chars() {
+                if conversions::to_lower(c)[0] as u32 == self.0[i] as u32 || conversions::to_upper(c)[0] as u32 == self.0[i] as u32 {
+                    i += 1;
+                } else {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
     }
 }
 
