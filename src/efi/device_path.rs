@@ -84,7 +84,7 @@ pub fn get_device_path_size (
     loop {
       let node_size = get_device_path_node_size(device_path_node);
       size = size + node_size;
-      if get_device_path_node_type(device_path_node) == r_efi::protocols::device_path::TYPE_END && 
+      if get_device_path_node_type(device_path_node) == r_efi::protocols::device_path::TYPE_END &&
          get_device_path_node_sub_type(device_path_node) == r_efi::protocols::device_path::End::SUBTYPE_ENTIRE {
         break;
       }
@@ -183,4 +183,24 @@ pub fn get_file_path_media_device_path(device_path: *mut DevicePathProtocol) -> 
       device_path_node = get_next_device_path_node (device_path_node);
    }
    None
+}
+
+pub fn drop_file_path_media_device_path(device_path: *mut DevicePathProtocol)
+{
+  let mut device_path_node = device_path;
+  loop {
+    if get_device_path_node_type(device_path_node) == r_efi::protocols::device_path::TYPE_END &&
+      get_device_path_node_sub_type(device_path_node) == r_efi::protocols::device_path::End::SUBTYPE_ENTIRE {
+        break;
+    }
+    if get_device_path_node_type(device_path_node) == r_efi::protocols::device_path::TYPE_MEDIA &&
+      get_device_path_node_sub_type(device_path_node) == r_efi::protocols::device_path::Media::SUBTYPE_FILE_PATH {
+        unsafe{ (*device_path_node).r#type = r_efi::protocols::device_path::TYPE_END; (*device_path_node).sub_type = r_efi::protocols::device_path::End::SUBTYPE_ENTIRE;}
+    }
+    if get_device_path_node_type(device_path_node) == r_efi::protocols::device_path::TYPE_END &&
+      get_device_path_node_sub_type(device_path_node) == r_efi::protocols::device_path::End::SUBTYPE_ENTIRE {
+      break;
+    }
+    device_path_node = get_next_device_path_node (device_path_node);
+ }
 }

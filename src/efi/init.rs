@@ -228,6 +228,7 @@ pub fn initialize_fs() {
 
     let efi_part_id= unsafe { crate::efi::block::populate_block_wrappers(&mut crate::efi::BLOCK_WRAPPERS, &device) };
 
+    let efi_part: &mut crate::efi::block::BlockWrapper = unsafe{&mut (*crate::efi::BLOCK_WRAPPERS.wrappers[efi_part_id.unwrap() as usize])};
     let mut wrapped_fs = unsafe{&mut (*file::FileSystemWrapper::new(f).unwrap())};
 
     let mut handle : Handle = core::ptr::null_mut();
@@ -242,36 +243,36 @@ pub fn initialize_fs() {
       return;
     }
 
-    let mut file_system_path = HardDriveDevicePath {
-      file_system_path_node: HardDriveDevicePathNode {
-          header: DevicePathProtocol {
-          r#type: r_efi::protocols::device_path::TYPE_MEDIA,
-          sub_type: r_efi::protocols::device_path::Hardware::SUBTYPE_PCI,
-          length: [42, 0],
-        },
-        partition_number: efi_part_id.unwrap() as u32,
-        partition_start: partition_start as u64,
-        partition_size: partition_end - partition_start as u64,
-        partition_signature: [0x5452_4150_2049_4645u64,0],
-        partition_format: 0x2 as u8,
-        partition_type: 0x2 as u8,
-      },
-      end: r_efi::protocols::device_path::End {
-          header: DevicePathProtocol {
-          r#type: r_efi::protocols::device_path::TYPE_END,
-          sub_type: r_efi::protocols::device_path::End::SUBTYPE_ENTIRE,
-          length: [4, 0],
-        },
-      },
-    };
+    // let mut file_system_path = HardDriveDevicePath {
+    //   file_system_path_node: HardDriveDevicePathNode {
+    //       header: DevicePathProtocol {
+    //       r#type: r_efi::protocols::device_path::TYPE_MEDIA,
+    //       sub_type: r_efi::protocols::device_path::Hardware::SUBTYPE_PCI,
+    //       length: [42, 0],
+    //     },
+    //     partition_number: efi_part_id.unwrap() as u32,
+    //     partition_start: partition_start as u64,
+    //     partition_size: partition_end - partition_start as u64,
+    //     partition_signature: [0x5452_4150_2049_4645u64,0],
+    //     partition_format: 0x2 as u8,
+    //     partition_type: 0x2 as u8,
+    //   },
+    //   end: r_efi::protocols::device_path::End {
+    //       header: DevicePathProtocol {
+    //       r#type: r_efi::protocols::device_path::TYPE_END,
+    //       sub_type: r_efi::protocols::device_path::End::SUBTYPE_ENTIRE,
+    //       length: [4, 0],
+    //     },
+    //   },
+    // };
 
-    let mut device_path_buffer: *mut core::ffi::c_void = dup_device_path(&mut file_system_path.file_system_path_node.header as *mut DevicePathProtocol as *mut c_void);
-    log!("device_path_buffer address: {:?}, device_path: {:?}\n", device_path_buffer, unsafe{*(device_path_buffer as *mut DevicePathProtocol)});
+    // let mut device_path_buffer: *mut core::ffi::c_void = dup_device_path(&mut file_system_path.file_system_path_node.header as *mut DevicePathProtocol as *mut c_void);
+    // log!("device_path_buffer address: {:?}, device_path: {:?}\n", device_path_buffer, unsafe{*(device_path_buffer as *mut DevicePathProtocol)});
     let status = crate::efi::install_protocol_interface (
             &mut handle,
             &mut r_efi::protocols::device_path::PROTOCOL_GUID as *mut Guid,
             InterfaceType::NativeInterface,
-            device_path_buffer
+            (&mut efi_part.disk_paths) as *const crate::efi::block::BlockDevicePath as *const c_void as *mut c_void
             );
     log!("EFI-STUB: image_handle: {:?} \n", handle);
 

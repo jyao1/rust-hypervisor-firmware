@@ -99,6 +99,15 @@ pub struct Image {
     image_count: usize,
 }
 
+fn dup_device_path(device_path: *mut c_void) -> *mut core::ffi::c_void{
+  let mut device_path_buffer: *mut c_void = core::ptr::null_mut();
+  let device_path_size = crate::efi::device_path::get_device_path_size (device_path as *mut DevicePathProtocol);
+  let status = crate::efi::allocate_pool (MemoryType::BootServicesData, device_path_size, &mut device_path_buffer);
+  unsafe {core::ptr::copy_nonoverlapping (device_path, device_path_buffer, device_path_size);}
+
+  device_path_buffer
+}
+
 impl Image {
     pub fn load_image (
         &mut self,
@@ -168,11 +177,13 @@ impl Image {
         loaded_image.unload = crate::efi::image_unload;
 
 
+        let mut device_path_new = dup_device_path(device_path_buffer);
+        crate::efi::device_path::drop_file_path_media_device_path(device_path_new as *mut DevicePathProtocol);
         let status = crate::efi::install_protocol_interface (
                        &mut loaded_image.device_handle as *mut Handle,
                        &mut r_efi::protocols::device_path::PROTOCOL_GUID as *mut Guid,
                        InterfaceType::NativeInterface,
-                       device_path_buffer
+                       device_path_new
                        );
 
         let status = crate::efi::install_protocol_interface (

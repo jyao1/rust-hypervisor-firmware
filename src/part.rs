@@ -27,7 +27,7 @@ struct Header {
     _current_lba: u64,
     _backup_lba: u64,
     first_usable_lba: u64,
-    _last_usable_lba: u64,
+    last_usable_lba: u64,
     _disk_guid: [u8; 16],
     first_part_lba: u64,
     part_count: u32,

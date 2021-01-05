@@ -1127,12 +1127,12 @@ pub extern "win64" fn load_image(
     crate::log!("EFI_STUB: loaded_image.device_handle: {:p}\n", loaded_image.device_handle);
 
     crate::log!("EFI_STUB: loaded_image fs_interface: {:p}\n", fs_interface);
-    let status = crate::efi::install_protocol_interface (
-        &mut loaded_image.device_handle as *mut *mut c_void,
-        &mut r_efi::efi::protocols::simple_file_system::PROTOCOL_GUID as *mut Guid,
-        InterfaceType::NativeInterface,
-        fs_interface
-        );
+    // let status = crate::efi::install_protocol_interface (
+    //     &mut loadeEFI_STUB - open_protocol:d_image.device_handle as *mut *mut c_void,
+    //     &mut r_efi::efi::protocols::simple_file_system::PROTOCOL_GUID as *mut Guid,
+    //     InterfaceType::NativeInterface,
+    //     fs_interface
+    //     );
 
     if status == Status::SUCCESS {
         if image_handle != core::ptr::null_mut() {
@@ -1223,21 +1223,21 @@ pub extern "win64" fn open_protocol(
     out_interface: *mut *mut c_void,
     agent_handle: Handle,
     controller_handle: Handle,
-    attributes: u32,
+    _attributes: u32,
 ) -> Status {
     if guid == core::ptr::null_mut() {
         crate::log!("EFI_STUB: open_protocol - NULL\n");
         return Status::INVALID_PARAMETER;
     }
 
-    if attributes != OPEN_PROTOCOL_GET_PROTOCOL {
-        crate::log!("EFI_STUB - open_protocol: attribute not support\n");
-        return Status::UNSUPPORTED;
-    }
+    // if attributes != OPEN_PROTOCOL_GET_PROTOCOL {
+    //     crate::log!("EFI_STUB - open_protocol: attribute not support\n");
+    //     return Status::UNSUPPORTED;
+    // }
 
     unsafe {*out_interface = core::ptr::null_mut();}
     let (status, interface) = HANDLE_DATABASE.lock().handle_protocol (handle, guid);
-    crate::log!("EFI_STUB - open_protocol: {:?}, handle: {:?}, attributes: {} - return - status: {:?}, interface {:?}\n", unsafe{*guid}, handle, attributes, status, interface);
+    crate::log!("EFI_STUB - open_protocol: {:?}, handle: {:?}, attributes: {} - return - status: {:?}, interface {:?}\n", unsafe{*guid}, handle, _attributes, status.value(), interface);
     if status == Status::SUCCESS {
       unsafe {*out_interface = interface;}
     }
@@ -1769,6 +1769,8 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
                 partition_end = end;
                 let efi_part_id= unsafe { crate::efi::block::populate_block_wrappers(&mut crate::efi::BLOCK_WRAPPERS, &device) };
                 log!("Filesystem ready\n");
+                let efi_part: &mut crate::efi::block::BlockWrapper = unsafe{&mut (*crate::efi::BLOCK_WRAPPERS.wrappers[efi_part_id.unwrap() as usize])};
+
                 let mut wrapped_fs = unsafe{&mut (*file::FileSystemWrapper::new(f).unwrap())};
                 let mut handle : Handle = core::ptr::null_mut();
                 let status = crate::efi::install_protocol_interface (
@@ -1782,37 +1784,42 @@ pub fn enter_uefi(hob: *const c_void) -> ! {
                     log!("Error");
                     }
                 log!("simple_file_system protocol, handle: {:?}\n", handle);
-                let mut file_system_path = HardDriveDevicePath {
-                    file_system_path_node: HardDriveDevicePathNode {
-                        header: DevicePathProtocol {
-                        r#type: r_efi::protocols::device_path::TYPE_MEDIA,
-                        sub_type: r_efi::protocols::device_path::Hardware::SUBTYPE_PCI,
-                        length: [42, 0],
-                        },
-                        partition_number: efi_part_id.unwrap() as u32,
-                        partition_start: partition_start as u64,
-                        partition_size: partition_end - partition_start as u64,
-                        partition_signature: [0x5452_4150_2049_4645u64,0],
-                        partition_format: 0x2 as u8,
-                        partition_type: 0x2 as u8,
-                    },
-                    end: r_efi::protocols::device_path::End {
-                        header: DevicePathProtocol {
-                        r#type: r_efi::protocols::device_path::TYPE_END,
-                        sub_type: r_efi::protocols::device_path::End::SUBTYPE_ENTIRE,
-                        length: [4, 0],
-                        },
-                    },
-                };
-                let mut device_path_buffer: *mut core::ffi::c_void = dup_device_path(&mut file_system_path.file_system_path_node.header as *mut DevicePathProtocol as *mut c_void);
-                log!("device_path_buffer address: {:?}, device_path: {:?}\n", device_path_buffer, unsafe{*(device_path_buffer as *mut DevicePathProtocol)});
+                // let mut file_system_path = HardDriveDevicePath {
+                //     file_system_path_node: HardDriveDevicePathNode {
+                //         header: DevicePathProtocol {
+                //         r#type: r_efi::protocols::device_path::TYPE_MEDIA,
+                //         sub_type: r_efi::protocols::device_path::Hardware::SUBTYPE_PCI,
+                //         length: [42, 0],
+                //         },
+                //         partition_number: efi_part_id.unwrap() as u32,
+                //         partition_start: partition_start as u64,
+                //         partition_size: partition_end - partition_start as u64,
+                //         partition_signature: [0x5452_4150_2049_4645u64,0],
+                //         partition_format: 0x2 as u8,
+                //         partition_type: 0x2 as u8,
+                //     },
+                //     end: r_efi::protocols::device_path::End {
+                //         header: DevicePathProtocol {
+                //         r#type: r_efi::protocols::device_path::TYPE_END,
+                //         sub_type: r_efi::protocols::device_path::End::SUBTYPE_ENTIRE,
+                //         length: [4, 0],
+                //         },
+                //     },
+                // };
+                // let mut device_path_buffer: *mut core::ffi::c_void = dup_device_path(&mut file_system_path.file_system_path_node.header as *mut DevicePathProtocol as *mut c_void);
+                // log!("device_path_buffer address: {:?}, device_path: {:?}\n", device_path_buffer, unsafe{*(device_path_buffer as *mut DevicePathProtocol)});
+                // let status = crate::efi::install_protocol_interface (
+                //         &mut handle,
+                //         &mut r_efi::protocols::device_path::PROTOCOL_GUID as *mut Guid,
+                //         InterfaceType::NativeInterface,
+                //         device_path_buffer
+                //         );
                 let status = crate::efi::install_protocol_interface (
                         &mut handle,
                         &mut r_efi::protocols::device_path::PROTOCOL_GUID as *mut Guid,
                         InterfaceType::NativeInterface,
-                        device_path_buffer
+                        (&mut efi_part.disk_paths) as *const crate::efi::block::BlockDevicePath as *const c_void as *mut c_void
                         );
-
                 let (image, size) = crate::efi::init::find_loader (new_hob);
 
                 let mut image_path = FullMemoryMappedDevicePath {

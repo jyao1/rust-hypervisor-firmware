@@ -144,7 +144,7 @@ pub struct BlockWrapper<'a> {
     // The ordering of these paths are very important, along with the C
     // representation as the device path "flows" from the first.
     pub controller_path: ControllerDevicePathProtocol,
-    pub disk_paths: [HardDiskDevicePathProtocol; 2],
+    pub disk_paths: BlockDevicePath,
     start_lba: u64,
 }
 
@@ -153,6 +153,16 @@ pub struct BlockWrappers<'a> {
     pub wrappers: [*mut BlockWrapper<'a>; 16],
     pub count: usize,
 }
+
+
+#[cfg(not(test))]
+#[repr(C,packed)]
+pub struct BlockDevicePath {
+    pub pci: r_efi::protocols::device_path::PciDevicePathNode,
+    pub hard_disk: HardDiskDevicePathProtocol,
+    pub end: DevicePathProtocol
+}
+
 
 #[cfg(not(test))]
 impl<'a> BlockWrapper<'a> {
@@ -210,38 +220,18 @@ impl<'a> BlockWrapper<'a> {
                     controller: 0,
                 },
                 // full disk vs partition
-                disk_paths: if partition_number == 0 {
-                    [
-                        HardDiskDevicePathProtocol {
-                            device_path: DevicePathProtocol {
-                                r#type: r_efi::protocols::device_path::TYPE_END,
-                                sub_type: 0xff, // End of full path
-                                length: [4, 0],
+                disk_paths:
+                    BlockDevicePath {
+                        pci: r_efi::protocols::device_path::PciDevicePathNode {
+                            header: DevicePathProtocol {
+                                r#type: r_efi::protocols::device_path::TYPE_HARDWARE,
+                                sub_type: 1,
+                                length: [6, 0],
                             },
-                            partition_number: 0,
-                            partition_format: 0x0,
-                            partition_start: 0,
-                            partition_size: 0,
-                            partition_signature: [0; 16],
-                            signature_type: 0,
+                            function: 0,
+                            device: 3, // GPT
                         },
-                        HardDiskDevicePathProtocol {
-                            device_path: DevicePathProtocol {
-                                r#type: r_efi::protocols::device_path::TYPE_END,
-                                sub_type: 0xff, // End of full path
-                                length: [4, 0],
-                            },
-                            partition_number: 0,
-                            partition_format: 0x0,
-                            partition_start: 0,
-                            partition_size: 0,
-                            partition_signature: [0; 16],
-                            signature_type: 0,
-                        },
-                    ]
-                } else {
-                    [
-                        HardDiskDevicePathProtocol {
+                        hard_disk: HardDiskDevicePathProtocol {
                             device_path: DevicePathProtocol {
                                 r#type: r_efi::protocols::device_path::TYPE_MEDIA,
                                 sub_type: 1,
@@ -254,21 +244,12 @@ impl<'a> BlockWrapper<'a> {
                             partition_signature: uuid,
                             signature_type: 0x02,
                         },
-                        HardDiskDevicePathProtocol {
-                            device_path: DevicePathProtocol {
-                                r#type: r_efi::protocols::device_path::TYPE_END,
-                                sub_type: 0xff, // End of full path
-                                length: [4, 0],
-                            },
-                            partition_number: 0,
-                            partition_format: 0x0,
-                            partition_start: 0,
-                            partition_size: 0,
-                            partition_signature: [0; 16],
-                            signature_type: 0,
-                        },
-                    ]
-                },
+                        end: DevicePathProtocol {
+                            r#type: r_efi::protocols::device_path::TYPE_END,
+                            sub_type: 0xff, // End of full path
+                            length: [4, 0],
+                        }
+                    },
             };
 
             (*bw).proto.media = &(*bw).media;
@@ -277,17 +258,26 @@ impl<'a> BlockWrapper<'a> {
     }
 }
 
+fn dup_device_path(device_path: *mut c_void) -> *mut core::ffi::c_void{
+    let mut device_path_buffer: *mut c_void = core::ptr::null_mut();
+    let device_path_size = crate::efi::device_path::get_device_path_size (device_path as *mut DevicePathProtocol);
+    let status = crate::efi::allocate_pool (MemoryType::BootServicesData, device_path_size, &mut device_path_buffer);
+    unsafe {core::ptr::copy_nonoverlapping (device_path, device_path_buffer, device_path_size);}
+
+    device_path_buffer
+}
+
+
 #[cfg(not(test))]
 #[allow(clippy::transmute_ptr_to_ptr)]
 pub fn populate_block_wrappers(
     wrappers: &mut BlockWrappers,
     block: *const crate::block::VirtioBlockDevice,
 ) -> Option<u32> {
+    let mut last_lba = 0u64;
     let mut parts: [crate::part::PartitionEntry; 16] = unsafe { core::mem::zeroed() };
 
     log!("populate_block_wrappers...\n");
-    wrappers.wrappers[0] =
-        BlockWrapper::new(unsafe { core::mem::transmute(block) }, 0, 0, 0, [0; 16]);
 
     let mut efi_part_id = Some(0);
     let part_count = crate::part::get_partitions(unsafe { &*block }, &mut parts).unwrap();
@@ -300,12 +290,93 @@ pub fn populate_block_wrappers(
             p.last_lba,
             p.guid,
         );
+        if last_lba < p.last_lba {
+            last_lba = p.last_lba;
+        }
         log!("par {}\n", i);
         if p.is_efi_partition() {
             log!("  is_efi_partition\n");
             efi_part_id = Some(i + 1);
         }
+        let mut handle : r_efi::efi::Handle = core::ptr::null_mut();
+        let status = crate::efi::install_protocol_interface (
+            &mut handle,
+            &mut r_efi::protocols::block_io::PROTOCOL_GUID as *mut r_efi::efi::Guid,
+            r_efi::efi::InterfaceType::NativeInterface,
+            unsafe{&mut ((*wrappers.wrappers[i as usize + 1]).proto)} as *const BlockIoProtocol as *const c_void as *mut c_void
+            );
+        let status = crate::efi::install_protocol_interface (
+            &mut handle,
+            &mut r_efi::protocols::device_path::PROTOCOL_GUID as *mut r_efi::efi::Guid,
+            r_efi::efi::InterfaceType::NativeInterface,
+            unsafe{&mut ((*wrappers.wrappers[i as usize + 1]).disk_paths)} as *const BlockDevicePath as *const c_void as *mut c_void
+            );
+        // let mut handle : r_efi::efi::Handle = core::ptr::null_mut();
+        // let status = crate::efi::install_protocol_interface (
+        //     &mut handle,
+        //     &mut r_efi::protocols::block_io::PROTOCOL_GUID as *mut r_efi::efi::Guid,
+        //     r_efi::efi::InterfaceType::NativeInterface,
+        //     unsafe{&mut ((*wrappers.wrappers[i as usize + 1]).proto)} as *const BlockIoProtocol as *const c_void as *mut c_void
+        //     );
+
+        // let mut device_path = r_efi::protocols::device_path::PciDevicePath {
+        //     pci_device_path: r_efi::protocols::device_path::PciDevicePathNode {
+        //         header: DevicePathProtocol {
+        //             r#type: r_efi::protocols::device_path::TYPE_HARDWARE,
+        //             sub_type: 1,
+        //             length: [6, 0],
+        //         },
+        //         function: 0,
+        //         device: 3,
+        //     },
+        //     end: DevicePathProtocol {
+        //         r#type: r_efi::protocols::device_path::TYPE_END,
+        //         sub_type: 0xff, // End of full path
+        //         length: [4, 0],
+        //     }
+        // };
+        // let device_path_buffer = dup_device_path(&mut device_path.pci_device_path.header as *mut DevicePathProtocol as *mut c_void);
+        // let status = crate::efi::install_protocol_interface (
+        //     &mut handle,
+        //     &mut r_efi::protocols::device_path::PROTOCOL_GUID as *mut r_efi::efi::Guid,
+        //     r_efi::efi::InterfaceType::NativeInterface,
+        //     device_path_buffer
+        //     );
     }
+
+    wrappers.wrappers[0] =
+    BlockWrapper::new(unsafe { core::mem::transmute(block) }, 0, 0, last_lba, [0; 16]);
+    let mut handle : r_efi::efi::Handle = core::ptr::null_mut();
+    let status = crate::efi::install_protocol_interface (
+        &mut handle,
+        &mut r_efi::protocols::block_io::PROTOCOL_GUID as *mut r_efi::efi::Guid,
+        r_efi::efi::InterfaceType::NativeInterface,
+        unsafe{&mut ((*wrappers.wrappers[0]).proto)} as *const BlockIoProtocol as *const c_void as *mut c_void
+        );
+        let mut device_path = r_efi::protocols::device_path::PciDevicePath {
+            pci_device_path: r_efi::protocols::device_path::PciDevicePathNode {
+                header: DevicePathProtocol {
+                    r#type: r_efi::protocols::device_path::TYPE_HARDWARE,
+                    sub_type: 1,
+                    length: [6, 0],
+                },
+                function: 0,
+                device: 3,
+            },
+            end: DevicePathProtocol {
+                r#type: r_efi::protocols::device_path::TYPE_END,
+                sub_type: 0xff, // End of full path
+                length: [4, 0],
+            }
+        };
+        let device_path_buffer = dup_device_path(&mut device_path.pci_device_path.header as *mut DevicePathProtocol as *mut c_void);
+        let status = crate::efi::install_protocol_interface (
+            &mut handle,
+            &mut r_efi::protocols::device_path::PROTOCOL_GUID as *mut r_efi::efi::Guid,
+            r_efi::efi::InterfaceType::NativeInterface,
+            device_path_buffer
+            );
+
     wrappers.count = part_count as usize + 1;
     log!("wrappers.count {}\n", wrappers.count);
     log!("efi_part_id {:?}\n", efi_part_id);

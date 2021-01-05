@@ -82,3 +82,16 @@ pub struct HardDriveDevicePath {
   pub file_system_path_node : HardDriveDevicePathNode,
   pub end: End,
 }
+
+#[repr(C,packed)]
+pub struct PciDevicePathNode {
+  pub header : Protocol,
+  pub function: u8,
+  pub device: u8
+}
+
+#[repr(C,packed)]
+pub struct PciDevicePath {
+  pub pci_device_path: PciDevicePathNode,
+  pub end: Protocol
+}
