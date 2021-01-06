@@ -22,6 +22,25 @@ cargo xbuild --release --target target.json
 
 target/target/release/payload-efi
 
+5) Compiler grub (option)
+
+Download grub
+```
+https://github.com/rhboot/grub2.git 
+```
+
+Build grub
+```
+../configure --prefix /home/luxy/local --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-platform=efi --enable-boot-time --enable-mm-debug --enable-cache-stats 
+```
+
+Install grub
+```
+sudo losetup -f -P clear-31380-kvm.img 
+sudo mount /dev/loop1p1 /mnt/clear-kvm-img/ 
+sudo ./grub-install --efi-directory /mnt/clear-kvm-img --target x86_64-efi 
+```
+
 ## Running
 
 1) check out https://github.com/jyao1/edk2/tree/minovmf
@@ -29,23 +48,42 @@ target/target/release/payload-efi
 2) build MinOvmf64FwPkg.
 
 ```
-   build -p MinOvmf64FwPkg\MinOvmf64FwPkg.dsc -a IA32 -a X64 -t VS2015x86
+   build -p MinOvmf64FwPkg\MinOvmf64RustFwPkg.dsc -a IA32 -a X64 -t CLANGPDB
 ```
 
-The image is Build\MinOvmf64Fw\DEBUG_VS2015x86\fv\OVMF64Fw.fd.
+The image is Build\MinOvmf64Fw\DEBUG_CLANGPDB\fv\OVMF64RUSTFW.fd.
 
 3) install qemu (https://www.qemu.org/)
 
-4) download image. (https://download.clearlinux.org/releases/28660/clear/clear-28660-kvm.img.xz)
+4) download image. (https://download.clearlinux.org/releases/31380/clear/clear-31380-kvm.img.xz)
 
 5) run qemu
 
 ```
-qemu-system-x86_64.exe -machine q35,smm=on -smp 4 -serial mon:stdio -drive if=pflash,format=raw,unit=0,file=OVMF64Fw.fd -drive if=none,id=virtio-disk0,file=clear-29160-kvm.img -device virtio-blk-pci,drive=virtio-disk0,disable-legacy=on,disable-modern=off
+qemu-system-x86_64.exe -machine q35,smm=on -smp 4 -serial mon:stdio -drive if=pflash,format=raw,unit=0,file=OVMF64RUSTFW.fd -drive if=none,id=virtio-disk0,file=clear-31380-kvm.img -device virtio-blk-pci,drive=virtio-disk0,disable-legacy=on,disable-modern=off  -vnc 0.0.0.0:1 -m 1g --enable-kvm 
 ```
 
 6) Then a uefi shell command prompt is shown in the command window.
-It supports some simple commands.
+It supports some simple commands, such as memmap.
+
+```
+EFI\BOOT\BOOTX64.efi
+```
+
+7) It will boot to grub.
+
+Add kernel information:
+```
+linux (hd0,gpt1)/EFI/org.clearlinux/kernel-org.clearlinux.kvm.5.3.7-396 root=PARTUUID=492838b1-9d22-484a-a59f-fdd6f18d188c quiet console=hvc0 console=tty0 console=ttyS0,115200n8 cryptomgr.notests init=/usr/lib/systemd/systemd-bootchart initcall_debug no_timer_check noreplace-smp page_alloc.shuffle=1 rootfstype=ext4,btrfs,xfs tsc=reliable rw 
+```
+
+Then
+
+```
+boot
+```
+
+8) It will boot to kernel. You can see the last debug message is exit_boot_service.
 
 ## Boot Flow
 
